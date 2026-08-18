@@ -3,8 +3,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { startJob, waitJob, cancelJob, listJobs, getJob, jobView } from './jobs.mjs';
 import { hubAvailable, hub } from './hub-client.mjs';
+
+// The standalone job manager depends on @deepseek-ai/* peer dependencies that
+// are available inside the DSH host module realm, but not necessarily to this
+// external MCP process. Hub mode does not need those dependencies, so load the
+// standalone path only if a request actually resolves to it.
+let standaloneJobsPromise;
+function standaloneJobs() {
+  standaloneJobsPromise ??= import('./jobs.mjs');
+  return standaloneJobsPromise;
+}
 
 const server = new McpServer({ name: 'dsh-crew', version: '0.1.0' });
 
@@ -95,6 +104,7 @@ server.registerTool('dsh_run_worker', {
       const spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t) });
       return await hub.get(spawned.id, timeout);
     }
+    const { startJob, waitJob, jobView } = await standaloneJobs();
     const job = startJob({ task, tier: t, effort: e, cwd: workDir, timeoutMs: timeout * 1000, source: ORCHESTRATOR });
     await waitJob(job.id, timeout * 1000);
     return jobView(job, { withResult: true });
@@ -152,6 +162,7 @@ server.registerTool('dsh_spawn_worker', {
   const t = applyTierPolicy(tier);
   const e = effort ?? sessionConfig.default_effort;
   if ((await resolveMode()) === 'hub') return text(await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t) }));
+  const { startJob, jobView } = await standaloneJobs();
   const job = startJob({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR });
   return text(jobView(job));
 });
@@ -161,7 +172,8 @@ server.registerTool('dsh_worker_status', {
   description: 'List all DSH worker jobs in this session with live progress (turn/step, current tool, token usage).',
   inputSchema: {},
 }, async () => {
-  const local = listJobs().map((j) => jobView(j));
+  const jobs = standaloneJobsPromise ? await standaloneJobsPromise : null;
+  const local = jobs ? jobs.listJobs().map((j) => jobs.jobView(j)) : [];
   const remote = (await hubAvailable()) ? await hub.list().catch(() => []) : [];
   return text([...remote, ...local]);
 });
@@ -178,6 +190,7 @@ server.registerTool('dsh_worker_result', {
     if (!(await hubAvailable())) return text({ error: 'hub not reachable' });
     return text(await hub.get(job_id, wait_seconds).catch((e) => ({ error: e.message })));
   }
+  const { getJob, waitJob, jobView } = await standaloneJobs();
   if (!getJob(job_id)) return text({ error: `no such job: ${job_id}` });
   const job = await waitJob(job_id, wait_seconds > 0 ? wait_seconds * 1000 : 1);
   return text(jobView(job, { withResult: true }));
@@ -192,6 +205,7 @@ server.registerTool('dsh_worker_cancel', {
     if (!(await hubAvailable())) return text({ error: 'hub not reachable' });
     return text(await hub.cancel(job_id).catch((e) => ({ error: e.message })));
   }
+  const { getJob, cancelJob, jobView } = await standaloneJobs();
   if (!getJob(job_id)) return text({ error: `no such job: ${job_id}` });
   return text(jobView(await cancelJob(job_id), { withResult: true }));
 });

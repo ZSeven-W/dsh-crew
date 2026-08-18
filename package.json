@@ -20,6 +20,7 @@
   },
   "scripts": {
     "mcp": "node src/server.mjs",
+    "test": "node --test test/*.test.mjs",
     "build:client": "tsdown src/client/index.tsx --format cjs --platform browser --target es2022 --tsconfig tsconfig.client.json --deps.never-bundle react --deps.never-bundle react/jsx-runtime --deps.never-bundle react-dom --deps.never-bundle react-dom/client --out-dir .client-build --clean --logLevel warn && node scripts/build-client.mjs"
   },
   "dependencies": {
