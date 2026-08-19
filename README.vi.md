@@ -349,6 +349,7 @@ Runtime dependencies chỉ có `@modelcontextprotocol/sdk` và `zod`; mọi gói
 
 ## Hệ sinh thái
 
+- [DSH iOS](https://github.com/ZSeven-W/dsh-ios) — một iOS Simulator sống động — và iPhone kết nối USB — ngay trong hội thoại
 - [DSH Noema](https://github.com/ZSeven-W/dsh-noema) — bộ nhớ dài hạn cho DSH
 - [DSH OpenPencil](https://github.com/ZSeven-W/dsh-openpencil) — kiểm tra và chỉnh sửa tài liệu thiết kế `.op` ngay trong hội thoại
 

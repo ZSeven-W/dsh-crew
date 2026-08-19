@@ -349,6 +349,7 @@ node scripts/smoke.mjs          # dispatches one real flash task end to end
 
 ## Экосистема
 
+- [DSH iOS](https://github.com/ZSeven-W/dsh-ios) — живой симулятор iOS — и iPhone по USB — прямо в диалоге
 - [DSH Noema](https://github.com/ZSeven-W/dsh-noema) — долговременная память для DSH
 - [DSH OpenPencil](https://github.com/ZSeven-W/dsh-openpencil) — просмотр и редактирование дизайн-документов `.op` прямо в диалоге
 

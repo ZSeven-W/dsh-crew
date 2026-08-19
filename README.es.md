@@ -349,6 +349,7 @@ Las dependencias runtime son solo `@modelcontextprotocol/sdk` y `zod`; cada paqu
 
 ## Ecosistema
 
+- [DSH iOS](https://github.com/ZSeven-W/dsh-ios) — un simulador de iOS —y un iPhone por USB— dentro de la conversación
 - [DSH Noema](https://github.com/ZSeven-W/dsh-noema): memoria a largo plazo para DSH
 - [DSH OpenPencil](https://github.com/ZSeven-W/dsh-openpencil): inspeccionar y editar documentos de diseño `.op` dentro de una conversación
 

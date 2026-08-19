@@ -349,6 +349,7 @@ Les dépendances runtime sont uniquement `@modelcontextprotocol/sdk` et `zod` ; 
 
 ## Écosystème
 
+- [DSH iOS](https://github.com/ZSeven-W/dsh-ios) — un simulateur iOS — et un iPhone en USB — vivants dans la conversation
 - [DSH Noema](https://github.com/ZSeven-W/dsh-noema) — mémoire à long terme pour DSH
 - [DSH OpenPencil](https://github.com/ZSeven-W/dsh-openpencil) — inspecter et modifier les documents de conception `.op` dans une conversation
 
