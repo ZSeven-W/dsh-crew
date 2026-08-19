@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { startJob, waitJob, cancelJob, listJobs, getJob, jobView } from './jobs.mjs';
 import { hubAvailable, hub } from './hub-client.mjs';
 
-const server = new McpServer({ name: 'dsh-crew', version: '0.1.0' });
+const server = new McpServer({ name: 'dsh-crew', version: '0.1.0-rc.2' });
 
 const tierSchema = z.enum(['flash', 'pro']).optional().describe('Worker model tier: flash = deepseek-v4-flash (simple tasks), pro = deepseek-v4-pro (harder tasks). Omit to use the session default.');
 const effortSchema = z.enum(['off', 'high', 'max']).optional().describe('Reasoning effort for the worker. Omit to use the session default.');
@@ -93,9 +93,12 @@ server.registerTool('dsh_run_worker', {
   const runOnce = async (t) => {
     if ((await resolveMode()) === 'hub') {
       const spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t) });
+      // The hub client slices this wait internally; a single request that
+      // waits minutes would be cut by undici's 300 s header timeout and
+      // reported as a bare "fetch failed" while the job kept running.
       return await hub.get(spawned.id, timeout);
     }
-    const job = startJob({ task, tier: t, effort: e, cwd: workDir, timeoutMs: timeout * 1000, source: ORCHESTRATOR });
+    const job = await startJob({ task, tier: t, effort: e, cwd: workDir, timeoutMs: timeout * 1000, source: ORCHESTRATOR });
     await waitJob(job.id, timeout * 1000);
     return jobView(job, { withResult: true });
   };
@@ -152,7 +155,7 @@ server.registerTool('dsh_spawn_worker', {
   const t = applyTierPolicy(tier);
   const e = effort ?? sessionConfig.default_effort;
   if ((await resolveMode()) === 'hub') return text(await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t) }));
-  const job = startJob({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR });
+  const job = await startJob({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR });
   return text(jobView(job));
 });
 

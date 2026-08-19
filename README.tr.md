@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Geçerli eklenti sürümü: <code>0.1.0-rc.1</code> &middot; DSH <code>0.1.0-rc.6</code> ile test edildi</sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Geçerli eklenti sürümü: <code>0.1.0-rc.2</code> &middot; DSH <code>0.1.0-rc.6</code> ile test edildi</sub>
 </p>
 
 <p align="center">

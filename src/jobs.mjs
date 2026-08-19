@@ -2,7 +2,6 @@
 // Progress derived from session.event notifications; status mirrored to a
 // JSON file so the Claude Code statusline (and anything else) can render it.
 
-import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client';
 import { readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { createShardWriter } from './status-shard.mjs';
 import { fileURLToPath } from 'node:url';
@@ -57,10 +56,28 @@ export function jobView(j, { withResult = false } = {}) {
 export function listJobs() { return [...jobs.values()]; }
 export function getJob(id) { return jobs.get(id); }
 
-export function startJob({ task, tier = 'flash', effort = 'max', cwd, maxTokens = 49_152, timeoutMs = 1_800_000, source = 'api' }) {
+export async function startJob({ task, tier = 'flash', effort = 'max', cwd, maxTokens = 49_152, timeoutMs = 1_800_000, source = 'api' }) {
   const tierInfo = TIERS[tier];
   if (!tierInfo) throw new Error(`unknown tier "${tier}" (expected: ${Object.keys(TIERS).join(', ')})`);
   if (!['off', 'high', 'max'].includes(effort)) throw new Error(`unknown effort "${effort}" (expected: off, high, max)`);
+
+  // The DSH SDK is only needed by the standalone dispatch path, so it is
+  // loaded lazily here instead of being a top-level import. The bundled MCP
+  // server keeps every @deepseek-ai/* package external (see scripts/build-mcp.mjs):
+  // hub mode never touches the SDK, and an installed copy without the package
+  // fails on this line - with a hint - instead of dying at module load.
+  let DeepSeekHarness;
+  try {
+    ({ DeepSeekHarness } = await import('@deepseek-ai/dsh-sdk-client'));
+  } catch (err) {
+    if (err?.code === 'ERR_MODULE_NOT_FOUND') {
+      const hint = new Error(`@deepseek-ai/dsh-sdk-client not installed; standalone dispatch requires it - run pnpm install in ${ROOT}, or use hub mode (dsh_worker_config mode=hub) so jobs run inside a DSH instance`);
+      hint.code = 'ERR_MODULE_NOT_FOUND';
+      throw hint;
+    }
+    throw err;
+  }
+
   if (!existsSync(RUNTIME_BIN)) throw new Error(`dsh-jsonrpc-agent not installed at ${RUNTIME_BIN}; run pnpm install in ${ROOT}`);
   const workspace = resolve(cwd ?? process.cwd());
   const id = `job-${nextId++}-${Date.now().toString(36)}`;

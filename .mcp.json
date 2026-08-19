@@ -2,7 +2,7 @@
   "mcpServers": {
     "dsh-crew": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/src/server.mjs"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/lib/server.mjs"]
     }
   }
 }

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; 現行プラグインリリース: <code>0.1.0-rc.1</code> &middot; 動作確認済み DSH <code>0.1.0-rc.6</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; 現行プラグインリリース: <code>0.1.0-rc.2</code> &middot; 動作確認済み DSH <code>0.1.0-rc.6</code></sub>
 </p>
 
 <p align="center">

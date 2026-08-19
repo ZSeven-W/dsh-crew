@@ -40,7 +40,7 @@ try {
 
     try {
       const { startJob, waitJob, jobView } = await import('../src/jobs.mjs');
-      const job = startJob({
+      const job = await startJob({
         task: 'Reply with exactly the word: ok',
         tier: 'flash',
         effort: 'off',
