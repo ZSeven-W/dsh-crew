@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> • 目前外掛程式版本: <code>0.1.0-rc.2</code> • 測試版本 DSH <code>0.1.0-rc.6</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> • 目前外掛程式版本: <code>0.1.0-rc.3</code> • 測試版本 DSH <code>0.1.0-rc.6</code></sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ Codex 端裝的是同樣兩條 prompt：
 
 - Codex 角色理論上可以嘗試 `model_provider` 直接指向 DeepSeek（未驗證）；此橋接不依賴它
 - 圖片生成輸出是平面點陣圖；圖層編輯需要 OpenPencil
-- **Runtime 依賴項**：僅 `@modelcontextprotocol/sdk` 和 `zod`；`@deepseek-ai/*` 是 peerDependencies（由 DSH 主機提供）
+- **Runtime 依賴項**：僅 `@modelcontextprotocol/sdk` 和 `zod`；`@deepseek-ai/*` 是宿主執行階段元件（由 DSH 主機提供；一般 npm 安裝不會拉取它們）
 - **Codex 必須設定**：`default_tools_approval_mode = "approve"`，否則工具呼叫自動取消
 
 ## 開發

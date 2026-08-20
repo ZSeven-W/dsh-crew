@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Versión actual del plugin: <code>0.1.0-rc.2</code> &middot; Probado con DSH <code>0.1.0-rc.6</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Versión actual del plugin: <code>0.1.0-rc.3</code> &middot; Probado con DSH <code>0.1.0-rc.6</code></sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ Este paquete también es un bundle DSH válido (`dsh.bundle` + `cordis.patch.yml
 
 - El rol de Codex puede, en teoría, probar `model_provider` apuntando directamente a DeepSeek (sin verificar); este puente no depende de ello
 - La salida de la generación de imágenes es un bitmap plano; la edición por capas requiere OpenPencil
-- **Dependencias runtime**: solo `@modelcontextprotocol/sdk` y `zod`; `@deepseek-ai/*` son peerDependencies (proporcionadas por el host DSH)
+- **Dependencias runtime**: solo `@modelcontextprotocol/sdk` y `zod`; `@deepseek-ai/*` son runtime del host (proporcionado por el host DSH; una instalación npm normal nunca las instala)
 - **Codex debe configurar**: `default_tools_approval_mode = "approve"`; si no, las llamadas a herramientas se cancelan automáticamente
 
 ## Desarrollo
@@ -345,7 +345,7 @@ node scripts/build-client.mjs   # envuelve el bundle para el cargador de módulo
 node scripts/smoke.mjs          # distribuye una tarea flash real de extremo a extremo
 ```
 
-Las dependencias runtime son solo `@modelcontextprotocol/sdk` y `zod`; cada paquete `@deepseek-ai/*` es una peer dependency proporcionada por el host DSH, lo que mantiene al plugin dentro del único realm de módulos del host.
+Las dependencias runtime son solo `@modelcontextprotocol/sdk` y `zod`; cada paquete `@deepseek-ai/*` es runtime del host proporcionado por el host DSH (documentado en el campo dshHostRuntime del paquete, no en peerDependencies, de modo que una instalación npm normal nunca las instala), lo que mantiene al plugin dentro del único realm de módulos del host.
 
 ## Ecosistema
 

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; वर्तमान प्लगइन रिलीज: <code>0.1.0-rc.2</code> &middot; DSH <code>0.1.0-rc.6</code> के साथ परीक्षित</sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; वर्तमान प्लगइन रिलीज: <code>0.1.0-rc.3</code> &middot; DSH <code>0.1.0-rc.6</code> के साथ परीक्षित</sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ Codex के लिए वही दो प्रॉम्प्ट इंस्
 
 - Codex भूमिका सैद्धांतिक रूप से `model_provider` को सीधे DeepSeek की ओर इंगित करने की कोशिश कर सकती है (अनिर्भर); यह ब्रिज इस पर निर्भर नहीं करता
 - इमेज जनरेशन आउटपुट फ्लैट बिटमैप है; लेयर संपादन के लिए OpenPencil की आवश्यकता है
-- **रनटाइम निर्भरताएं**: केवल `@modelcontextprotocol/sdk` और `zod`; `@deepseek-ai/*` peerDependencies हैं (DSH होस्ट द्वारा प्रदान किए जाते हैं)
+- **रनटाइम निर्भरताएं**: केवल `@modelcontextprotocol/sdk` और `zod`; `@deepseek-ai/*` होस्ट रनटाइम हैं (DSH होस्ट द्वारा प्रदान; सादा npm इंस्टॉल इन्हें कभी नहीं खींचता)
 - **Codex को कॉन्फ़िगर करना आवश्यक है**: `default_tools_approval_mode = "approve"`, अन्यथा टूल कॉल ऑटो-रद्द हो जाते हैं
 
 ## विकास करें

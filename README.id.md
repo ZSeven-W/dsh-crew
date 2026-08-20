@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Rilis plugin saat ini: <code>0.1.0-rc.2</code> &middot; Diuji dengan DSH <code>0.1.0-rc.6</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Rilis plugin saat ini: <code>0.1.0-rc.3</code> &middot; Diuji dengan DSH <code>0.1.0-rc.6</code></sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ Paket ini juga merupakan DSH bundle yang valid (`dsh.bundle` + `cordis.patch.yml
 
 - Role Codex secara teoretis dapat mencoba `model_provider` yang mengarah langsung ke DeepSeek (belum diverifikasi); jembatan ini tidak bergantung padanya
 - Output pembuatan gambar berupa bitmap datar; pengeditan layer memerlukan OpenPencil
-- **Dependensi runtime**: Hanya `@modelcontextprotocol/sdk` dan `zod`; `@deepseek-ai/*` adalah peerDependencies (disediakan oleh host DSH)
+- **Dependensi runtime**: Hanya `@modelcontextprotocol/sdk` dan `zod`; `@deepseek-ai/*` adalah runtime host (disediakan oleh host DSH; instalasi npm biasa tidak pernah menariknya)
 - **Codex wajib dikonfigurasi**: `default_tools_approval_mode = "approve"`, jika tidak panggilan tool otomatis dibatalkan
 
 ## Pengembangan
@@ -345,7 +345,7 @@ node scripts/build-client.mjs   # wraps the bundle for the DSH module loader
 node scripts/smoke.mjs          # dispatches one real flash task end to end
 ```
 
-Dependensi runtime hanya `@modelcontextprotocol/sdk` dan `zod`; setiap paket `@deepseek-ai/*` adalah peer dependency yang disediakan oleh host DSH, yang menjaga plugin tetap berada di dalam satu realm modul milik host.
+Dependensi runtime hanya `@modelcontextprotocol/sdk` dan `zod`; setiap paket `@deepseek-ai/*` adalah runtime host yang disediakan oleh host DSH (didokumentasikan di field dshHostRuntime pada package, bukan di peerDependencies, sehingga instalasi npm biasa tidak pernah menariknya), yang menjaga plugin tetap berada di dalam satu realm modul milik host.
 
 ## Ekosistem
 

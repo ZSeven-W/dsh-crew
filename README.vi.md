@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Phiên bản plugin hiện tại: <code>0.1.0-rc.2</code> &middot; Đã kiểm thử với DSH <code>0.1.0-rc.6</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Phiên bản plugin hiện tại: <code>0.1.0-rc.3</code> &middot; Đã kiểm thử với DSH <code>0.1.0-rc.6</code></sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ Gói này cũng là một DSH bundle hợp lệ (`dsh.bundle` + `cordis.patch.ym
 
 - Codex role về lý thuyết có thể thử `model_provider` trỏ thẳng tới DeepSeek (chưa xác minh); cầu nối này không phụ thuộc vào điều đó
 - Đầu ra tạo ảnh là bitmap phẳng; chỉnh sửa layer cần OpenPencil
-- **Runtime dependencies**: Chỉ có `@modelcontextprotocol/sdk` và `zod`; `@deepseek-ai/*` là peerDependencies (do DSH host cung cấp)
+- **Runtime dependencies**: Chỉ có `@modelcontextprotocol/sdk` và `zod`; `@deepseek-ai/*` là runtime của host (do DSH host cung cấp; cài npm thông thường không bao giờ tải chúng)
 - **Codex phải cấu hình**: `default_tools_approval_mode = "approve"`, nếu không các lời gọi tool sẽ bị tự động hủy
 
 ## Phát triển
@@ -345,7 +345,7 @@ node scripts/build-client.mjs   # wraps the bundle for the DSH module loader
 node scripts/smoke.mjs          # dispatches one real flash task end to end
 ```
 
-Runtime dependencies chỉ có `@modelcontextprotocol/sdk` và `zod`; mọi gói `@deepseek-ai/*` là peer dependency do DSH host cung cấp, giúp plugin nằm trong module realm duy nhất của host.
+Runtime dependencies chỉ có `@modelcontextprotocol/sdk` và `zod`; mọi gói `@deepseek-ai/*` là runtime của host do DSH host cung cấp (được ghi trong trường dshHostRuntime của package, không nằm trong peerDependencies, nên cài npm thông thường không bao giờ tải chúng), giúp plugin nằm trong module realm duy nhất của host.
 
 ## Hệ sinh thái
 

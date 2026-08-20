@@ -1,6 +1,6 @@
 {
   "name": "@zseven-w/dsh-crew",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0-rc.3",
   "type": "module",
   "main": "./src/hub/index.mjs",
   "description": "DeepSeek Harness plugin: dispatch work to DSH agents from Claude Code / Codex, as native subagents with live progress",
@@ -24,6 +24,7 @@
     "build:client": "tsdown src/client/index.tsx --format cjs --platform browser --target es2022 --tsconfig tsconfig.client.json --deps.never-bundle react --deps.never-bundle react/jsx-runtime --deps.never-bundle react-dom --deps.never-bundle react-dom/client --out-dir .client-build --clean --logLevel warn && node scripts/build-client.mjs",
     "build:mcp": "node scripts/build-mcp.mjs",
     "smoke:mcp": "node scripts/smoke-bundle.mjs",
+    "smoke:pack": "node scripts/smoke-pack.mjs",
     "prepack": "npm run smoke:mcp",
     "prepublishOnly": "npm run smoke:mcp"
   },
@@ -44,6 +45,11 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "dshHostRuntime": {
+    "_comment": "Documentation only - these @deepseek-ai/* packages are provided by the DSH HOST at runtime (worker.cordis.yml composition + host profile), never by this package. They were peerDependencies in <=0.1.0-rc.2, but npm 7+ auto-installs peers (optional ones included when placeable), and the pinned versions ERESOLVE against the host newer transitive tree (issue #3): a plain npm install of @zseven-w/dsh-crew failed. Keep these pins in sync with the DSH version this release is tested against (README badge).",
     "@deepseek-ai/dsh-agent": "0.1.0-rc.6",
     "@deepseek-ai/dsh-agent-presets": "0.1.0-rc.6",
     "@deepseek-ai/dsh-agent-spine-demo": "0.1.0-rc.6",
@@ -55,22 +61,15 @@
     "@deepseek-ai/dsh-llm-deepseek": "0.1.0-rc.6",
     "@deepseek-ai/dsh-sandbox-local": "0.1.0-rc.6",
     "@deepseek-ai/dsh-sandbox-policy": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-sdk-client": "^0.1.0-rc.5",
-    "@deepseek-ai/dsh-sdk-jsonrpc-demo": "^0.1.0-rc.5",
+    "@deepseek-ai/dsh-sdk-client": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-sdk-jsonrpc-demo": "0.1.0-rc.6",
     "@deepseek-ai/dsh-sdk-jsonrpc-server": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session-persistence-jsonl": "0.1.0-rc.6",
     "@deepseek-ai/dsh-subprocess-local": "0.1.0-rc.6",
     "@deepseek-ai/dsh-token-meter": "0.1.0-rc.6",
     "@deepseek-ai/dsh-tool-fs": "0.1.0-rc.6",
-    "@deepseek-ai/dsh-tool-todo": "0.1.0-rc.6",
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-sdk-client": {
-      "optional": true
-    }
+    "@deepseek-ai/dsh-tool-todo": "0.1.0-rc.6"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "0.1.0-rc.6",

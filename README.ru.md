@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Текущий релиз плагина: <code>0.1.0-rc.2</code> &middot; Проверено с DSH <code>0.1.0-rc.6</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Текущий релиз плагина: <code>0.1.0-rc.3</code> &middot; Проверено с DSH <code>0.1.0-rc.6</code></sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ cp codex/agents/*.toml ~/.codex/agents/    # global or project-level .codex/agen
 
 - Роль Codex теоретически может попробовать `model_provider`, указывающий напрямую на DeepSeek (не проверено); этот мост от него не зависит
 - Результат генерации изображений — плоский растр; для редактирования слоёв требуется OpenPencil
-- **Зависимости рантайма**: только `@modelcontextprotocol/sdk` и `zod`; `@deepseek-ai/*` — peerDependencies (предоставляются хостом DSH)
+- **Зависимости рантайма**: только `@modelcontextprotocol/sdk` и `zod`; `@deepseek-ai/*` — рантайм хоста (предоставляется хостом DSH; обычная установка npm их не ставит)
 - **Для Codex обязательно настроить**: `default_tools_approval_mode = "approve"`, иначе вызовы инструментов автоматически отменяются
 
 ## Разработка
@@ -345,7 +345,7 @@ node scripts/build-client.mjs   # wraps the bundle for the DSH module loader
 node scripts/smoke.mjs          # dispatches one real flash task end to end
 ```
 
-Зависимости рантайма — только `@modelcontextprotocol/sdk` и `zod`; каждый пакет `@deepseek-ai/*` является peer dependency, предоставляемой хостом DSH, что удерживает плагин в едином пространстве модулей хоста.
+Зависимости рантайма — только `@modelcontextprotocol/sdk` и `zod`; каждый пакет `@deepseek-ai/*` является рантаймом хоста, предоставляемым хостом DSH (задокументирован в поле dshHostRuntime пакета, а не в peerDependencies, поэтому обычная установка npm их не ставит), что удерживает плагин в едином пространстве модулей хоста.
 
 ## Экосистема
 

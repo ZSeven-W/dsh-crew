@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; 当前插件版本: <code>0.1.0-rc.2</code> &middot; 已在 DSH <code>0.1.0-rc.6</code> 验证</sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; 当前插件版本: <code>0.1.0-rc.3</code> &middot; 已在 DSH <code>0.1.0-rc.6</code> 验证</sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ Codex 侧装的是同样两条 prompt：
 
 - Codex 角色理论上可试 `model_provider` 直指 DeepSeek（未验证）；本桥不依赖它
 - 生图输出为平面位图，需要分层编辑用 OpenPencil
-- **运行时依赖**：仅 `@modelcontextprotocol/sdk` 与 `zod`；`@deepseek-ai/*` 为 peerDependencies（由 DSH 宿主提供）
+- **运行时依赖**：仅 `@modelcontextprotocol/sdk` 与 `zod`；`@deepseek-ai/*` 是宿主运行时（由 DSH 宿主提供，普通 npm 安装不会拉取它们）
 - **Codex 必须配置**：`default_tools_approval_mode = "approve"`，否则工具调用被自动取消
 
 ## 开发
@@ -345,7 +345,7 @@ node scripts/build-client.mjs   # 把 bundle 包装成 DSH 模块加载器格式
 node scripts/smoke.mjs          # 真实派发一个 flash 任务做端到端自检
 ```
 
-运行时依赖只有 `@modelcontextprotocol/sdk` 与 `zod`；所有 `@deepseek-ai/*` 都是 peerDependencies，由 DSH 宿主提供——这样插件才留在宿主的单一模块 realm 里。
+运行时依赖只有 `@modelcontextprotocol/sdk` 与 `zod`；所有 `@deepseek-ai/*` 都是宿主运行时，由 DSH 宿主提供（记录在 package.json 的 dshHostRuntime 字段，而非 peerDependencies，普通 npm 安装不会拉取它们）——这样插件才留在宿主的单一模块 realm 里。
 
 ## 生态
 

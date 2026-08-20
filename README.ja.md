@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; 現行プラグインリリース: <code>0.1.0-rc.2</code> &middot; 動作確認済み DSH <code>0.1.0-rc.6</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; 現行プラグインリリース: <code>0.1.0-rc.3</code> &middot; 動作確認済み DSH <code>0.1.0-rc.6</code></sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ Codex 側にも同じ 2 つのプロンプトが入ります:
 
 - Codex ロールは理論上、DeepSeek を直接指す `model_provider` を試せます (未検証)。このブリッジはそれに依存しません
 - 画像生成の出力はフラットなビットマップです。レイヤー編集には OpenPencil が必要です
-- **ランタイム依存**: `@modelcontextprotocol/sdk` と `zod` のみ。`@deepseek-ai/*` は peerDependencies です (DSH ホストが提供)
+- **ランタイム依存**: `@modelcontextprotocol/sdk` と `zod` のみ。`@deepseek-ai/*` はホストランタイムです (DSH ホストが提供。通常の npm インストールが取得することはありません)
 - **Codex の必須設定**: `default_tools_approval_mode = "approve"`。これがないとツール呼び出しが自動キャンセルされます
 
 ## 開発
@@ -345,7 +345,7 @@ node scripts/build-client.mjs   # wraps the bundle for the DSH module loader
 node scripts/smoke.mjs          # dispatches one real flash task end to end
 ```
 
-ランタイム依存は `@modelcontextprotocol/sdk` と `zod` のみです。すべての `@deepseek-ai/*` パッケージは DSH ホストが提供する peer dependency であり、プラグインはホストの単一モジュールレルム内に留まります。
+ランタイム依存は `@modelcontextprotocol/sdk` と `zod` のみです。すべての `@deepseek-ai/*` パッケージは DSH ホストが提供するホストランタイムであり（package.json の dshHostRuntime フィールドに記載され、peerDependencies には含まれないため、通常の npm インストールが取得することはありません）、プラグインはホストの単一モジュールレルム内に留まります。
 
 ## エコシステム
 

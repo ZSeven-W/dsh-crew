@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Aktuelles Plugin-Release: <code>0.1.0-rc.2</code> &middot; Getestet mit DSH <code>0.1.0-rc.6</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Aktuelles Plugin-Release: <code>0.1.0-rc.3</code> &middot; Getestet mit DSH <code>0.1.0-rc.6</code></sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ Dieses Paket ist auch ein gültiges DSH-Bundle (`dsh.bundle` + `cordis.patch.yml
 
 - Die Codex-Rolle kann theoretisch `model_provider` direkt auf DeepSeek zeigen lassen (unverifiziert); diese Brücke hängt nicht davon ab
 - Die Ausgabe der Bildgenerierung ist eine flache Bitmap; Ebenenbearbeitung erfordert OpenPencil
-- **Runtime-Abhängigkeiten**: Nur `@modelcontextprotocol/sdk` und `zod`; `@deepseek-ai/*` sind peerDependencies (vom DSH-Host bereitgestellt)
+- **Runtime-Abhängigkeiten**: Nur `@modelcontextprotocol/sdk` und `zod`; `@deepseek-ai/*` sind Host-Runtime (vom DSH-Host bereitgestellt; eine normale npm-Installation zieht sie nie)
 - **Codex muss konfigurieren**: `default_tools_approval_mode = "approve"`, andernfalls werden Tool-Aufrufe automatisch abgebrochen
 
 ## Entwicklung

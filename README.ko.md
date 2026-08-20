@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; 현재 plugin 릴리스: <code>0.1.0-rc.2</code> &middot; DSH <code>0.1.0-rc.6</code>에서 테스트됨</sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; 현재 plugin 릴리스: <code>0.1.0-rc.3</code> &middot; DSH <code>0.1.0-rc.6</code>에서 테스트됨</sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ progress는 동시에 `~/.config/dsh-crew/status.d/`에 미러링됩니다(write
 
 - Codex role은 이론적으로 DeepSeek을 직접 가리키는 `model_provider`를 시도할 수 있습니다(미검증). 이 bridge는 그것에 의존하지 않습니다
 - Image generation 출력은 flat bitmap입니다. 레이어 편집에는 OpenPencil이 필요합니다
-- **Runtime dependencies**: `@modelcontextprotocol/sdk`와 `zod`만 있습니다. `@deepseek-ai/*`는 peerDependencies입니다(DSH host가 제공)
+- **Runtime dependencies**: `@modelcontextprotocol/sdk`와 `zod`만 있습니다. `@deepseek-ai/*`는 호스트 런타임입니다(DSH host가 제공; 일반 npm 설치는 이를 가져오지 않음)
 - **Codex 필수 구성**: `default_tools_approval_mode = "approve"`, 그렇지 않으면 tool 호출이 자동 취소됩니다
 
 ## 개발
@@ -345,7 +345,7 @@ node scripts/build-client.mjs   # wraps the bundle for the DSH module loader
 node scripts/smoke.mjs          # dispatches one real flash task end to end
 ```
 
-Runtime dependencies는 `@modelcontextprotocol/sdk`와 `zod`뿐입니다. 모든 `@deepseek-ai/*` 패키지는 DSH host가 제공하는 peer dependency이며, plugin을 host의 단일 module realm 안에 유지합니다.
+Runtime dependencies는 `@modelcontextprotocol/sdk`와 `zod`뿐입니다. 모든 `@deepseek-ai/*` 패키지는 DSH host가 제공하는 호스트 런타임이며(package.json의 dshHostRuntime 필드에 문서화되고 peerDependencies에는 없으므로 일반 npm 설치가 이를 가져오지 않음), plugin을 host의 단일 module realm 안에 유지합니다.
 
 ## 에코시스템
 

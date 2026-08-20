@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Geçerli eklenti sürümü: <code>0.1.0-rc.2</code> &middot; DSH <code>0.1.0-rc.6</code> ile test edildi</sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Geçerli eklenti sürümü: <code>0.1.0-rc.3</code> &middot; DSH <code>0.1.0-rc.6</code> ile test edildi</sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ Bu paket aynı zamanda geçerli bir DSH bundle'ıdır (`dsh.bundle` + `cordis.pa
 
 - Codex role'u teorik olarak doğrudan DeepSeek'e işaret eden `model_provider` deneyebilir (doğrulanmamış); bu köprü buna bağlı değildir
 - Görsel üretim çıktısı düz bitmap'tir; katman düzenlemesi OpenPencil gerektirir
-- **Runtime bağımlılıkları**: Yalnızca `@modelcontextprotocol/sdk` ve `zod`; `@deepseek-ai/*` paketleri peerDependencies'tir (DSH host tarafından sağlanır)
+- **Runtime bağımlılıkları**: Yalnızca `@modelcontextprotocol/sdk` ve `zod`; `@deepseek-ai/*` paketleri host runtime'dır (DSH host tarafından sağlanır; normal bir npm kurulumu bunları asla indirmez)
 - **Codex şunları yapılandırmalıdır**: `default_tools_approval_mode = "approve"`, aksi halde araç çağrıları otomatik iptal edilir
 
 ## Geliştirme
@@ -345,7 +345,7 @@ node scripts/build-client.mjs   # wraps the bundle for the DSH module loader
 node scripts/smoke.mjs          # dispatches one real flash task end to end
 ```
 
-Runtime bağımlılıkları yalnızca `@modelcontextprotocol/sdk` ve `zod`'dur; her `@deepseek-ai/*` paketi DSH host tarafından sağlanan bir peer dependency'dir; bu, eklentiyi host'un tek modül alanı içinde tutar.
+Runtime bağımlılıkları yalnızca `@modelcontextprotocol/sdk` ve `zod`'dur; her `@deepseek-ai/*` paketi DSH host tarafından sağlanan host runtime'dır (paketin dshHostRuntime alanında belgelenir, peerDependencies'te değil; bu yüzden normal bir npm kurulumu bunları asla indirmez); bu, eklentiyi host'un tek modül alanı içinde tutar.
 
 ## Ekosistem
 

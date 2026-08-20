@@ -59,8 +59,9 @@ try {
       }
     } catch (err) {
       // The standalone runtime lives in this package's own node_modules; the
-      // @deepseek-ai/* packages are peerDependencies, so an installed copy of
-      // the plugin has none of them and the dynamic import above is what tells
+      // @deepseek-ai/* packages are host runtime (documented in dshHostRuntime),
+      // so an installed copy of the plugin has none of them and the dynamic
+      // import above is what tells
       // us so. Anything else here is a dispatch failure, not a missing runtime.
       if (err.code === 'ERR_MODULE_NOT_FOUND' || err.code === 'MODULE_NOT_FOUND') {
         console.error('smoke test failed: the standalone runtime is not installed in this copy');

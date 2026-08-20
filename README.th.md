@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; เวอร์ชันปลั๊กอินปัจจุบัน: <code>0.1.0-rc.2</code> &middot; ทดสอบกับ DSH <code>0.1.0-rc.6</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; เวอร์ชันปลั๊กอินปัจจุบัน: <code>0.1.0-rc.3</code> &middot; ทดสอบกับ DSH <code>0.1.0-rc.6</code></sub>
 </p>
 
 <p align="center">
@@ -332,7 +332,7 @@ cp codex/agents/*.toml ~/.codex/agents/    # global or project-level .codex/agen
 
 - ในทางทฤษฎี Codex role สามารถลองชี้ `model_provider` ไปยัง DeepSeek ได้โดยตรง (ยังไม่ผ่านการตรวจสอบ) สะพานเชื่อมนี้ไม่ได้พึ่งพาสิ่งนั้น
 - ผลลัพธ์ของการสร้างภาพเป็น bitmap แบบแบน การแก้ไขเลเยอร์ต้องใช้ OpenPencil
-- **Runtime dependencies**: มีเพียง `@modelcontextprotocol/sdk` และ `zod` เท่านั้น `@deepseek-ai/*` เป็น peerDependencies (จัดหาโดย DSH host)
+- **Runtime dependencies**: มีเพียง `@modelcontextprotocol/sdk` และ `zod` เท่านั้น `@deepseek-ai/*` เป็น host runtime (จัดหาโดย DSH host; การติดตั้ง npm ปกติจะไม่ดึงมา)
 - **Codex ต้องตั้งค่า**: `default_tools_approval_mode = "approve"` มิฉะนั้น tool calls จะถูกยกเลิกอัตโนมัติ
 
 ## การพัฒนา
@@ -345,7 +345,7 @@ node scripts/build-client.mjs   # wraps the bundle for the DSH module loader
 node scripts/smoke.mjs          # dispatches one real flash task end to end
 ```
 
-Runtime dependencies มีเพียง `@modelcontextprotocol/sdk` และ `zod` เท่านั้น ทุกแพ็กเกจ `@deepseek-ai/*` เป็น peer dependency ที่ DSH host จัดหาให้ ซึ่งทำให้ปลั๊กอินอยู่ใน module realm เดียวกันของโฮสต์
+Runtime dependencies มีเพียง `@modelcontextprotocol/sdk` และ `zod` เท่านั้น ทุกแพ็กเกจ `@deepseek-ai/*` เป็น host runtime ที่ DSH host จัดหาให้ (บันทึกไว้ในฟิลด์ dshHostRuntime ของ package ไม่ใช่ใน peerDependencies การติดตั้ง npm ปกติจึงไม่ดึงมา) ซึ่งทำให้ปลั๊กอินอยู่ใน module realm เดียวกันของโฮสต์
 
 ## ระบบนิเวศ
 

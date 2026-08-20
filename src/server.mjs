@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { startJob, waitJob, cancelJob, listJobs, getJob, jobView } from './jobs.mjs';
 import { hubAvailable, hub } from './hub-client.mjs';
 
-const server = new McpServer({ name: 'dsh-crew', version: '0.1.0-rc.2' });
+const server = new McpServer({ name: 'dsh-crew', version: '0.1.0-rc.3' });
 
 const tierSchema = z.enum(['flash', 'pro']).optional().describe('Worker model tier: flash = deepseek-v4-flash (simple tasks), pro = deepseek-v4-pro (harder tasks). Omit to use the session default.');
 const effortSchema = z.enum(['off', 'high', 'max']).optional().describe('Reasoning effort for the worker. Omit to use the session default.');
