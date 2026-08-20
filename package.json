@@ -32,13 +32,6 @@
     "@modelcontextprotocol/sdk": "^1.17.5",
     "zod": "^3.24.0"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@deepseek-ai/dsh-subprocess-local",
-      "koffi",
-      "node-pty"
-    ]
-  },
   "exports": {
     ".": "./src/hub/index.mjs",
     "./client": "./lib/client.js",
