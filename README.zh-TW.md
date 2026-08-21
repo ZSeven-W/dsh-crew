@@ -349,6 +349,7 @@ Runtime 依賴項僅有 `@modelcontextprotocol/sdk` 和 `zod`；每個 `@deepsee
 
 ## 生態系
 
+- [DSH Android](https://github.com/ZSeven-W/dsh-android) — 在對話中執行 Android 模擬器或 USB 實機，全部由 adb 驅動
 - [DSH iOS](https://github.com/ZSeven-W/dsh-ios) — 在對話中執行 iOS 模擬器與 USB 連接的實機
 - [DSH Noema](https://github.com/ZSeven-W/dsh-noema) — DSH 的長期記憶
 - [DSH OpenPencil](https://github.com/ZSeven-W/dsh-openpencil) — 在對話中檢查和編輯 `.op` 設計文件

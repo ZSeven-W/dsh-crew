@@ -349,6 +349,7 @@ Runtime-Abhängigkeiten sind nur `@modelcontextprotocol/sdk` und `zod`; jedes `@
 
 ## Ökosystem
 
+- [DSH Android](https://github.com/ZSeven-W/dsh-android) — ein Live-Android-Emulator oder USB-Gerät in der Konversation, vollständig über adb gesteuert
 - [DSH iOS](https://github.com/ZSeven-W/dsh-ios) — ein lebender iOS-Simulator — und ein iPhone per USB — in der Konversation
 - [DSH Noema](https://github.com/ZSeven-W/dsh-noema) — Langzeitgedächtnis für DSH
 - [DSH OpenPencil](https://github.com/ZSeven-W/dsh-openpencil) — `.op`-Designdokumente innerhalb einer Konversation inspizieren und bearbeiten

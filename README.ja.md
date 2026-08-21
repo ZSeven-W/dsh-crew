@@ -349,6 +349,7 @@ node scripts/smoke.mjs          # dispatches one real flash task end to end
 
 ## エコシステム
 
+- [DSH Android](https://github.com/ZSeven-W/dsh-android) — 会話の中で動く Android エミュレータや USB 接続の実機を、すべて adb 経由で操作
 - [DSH iOS](https://github.com/ZSeven-W/dsh-ios) — 会話の中で動く iOS シミュレータと USB 接続の実機
 - [DSH Noema](https://github.com/ZSeven-W/dsh-noema) — DSH の長期記憶
 - [DSH OpenPencil](https://github.com/ZSeven-W/dsh-openpencil) — 会話内で `.op` デザインドキュメントを検査・編集

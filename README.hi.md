@@ -349,6 +349,7 @@ node scripts/smoke.mjs          # dispatches one real flash task end to end
 
 ## पारिस्थितिकी तंत्र
 
+- [DSH Android](https://github.com/ZSeven-W/dsh-android) — बातचीत के भीतर लाइव Android एमुलेटर या USB डिवाइस — पूरी तरह adb से संचालित
 - [DSH iOS](https://github.com/ZSeven-W/dsh-ios) — बातचीत के भीतर चलता iOS सिम्युलेटर — और USB से जुड़ा iPhone
 - [DSH Noema](https://github.com/ZSeven-W/dsh-noema) — DSH के लिए दीर्घकालीन स्मृति
 - [DSH OpenPencil](https://github.com/ZSeven-W/dsh-openpencil) — एक बातचीत के अंदर `.op` डिजाइन दस्तावेज़ को निरीक्षण और संपादित करें

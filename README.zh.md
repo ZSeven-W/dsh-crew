@@ -349,6 +349,7 @@ node scripts/smoke.mjs          # 真实派发一个 flash 任务做端到端自
 
 ## 生态
 
+- [DSH Android](https://github.com/ZSeven-W/dsh-android) —— 在对话中运行 Android 模拟器或 USB 真机，全部由 adb 驱动
 - [DSH iOS](https://github.com/ZSeven-W/dsh-ios) —— 在对话中运行 iOS 模拟器与 USB 连接的真机
 - [DSH Noema](https://github.com/ZSeven-W/dsh-noema) —— DSH 的长期记忆
 - [DSH OpenPencil](https://github.com/ZSeven-W/dsh-openpencil) —— 在对话里预览与编辑 `.op` 设计文档
