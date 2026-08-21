@@ -30,6 +30,26 @@ export function createShardWriter(kind) {
   };
 }
 
+/**
+ * Whether the process that wrote a shard still exists. Writers are named
+ * "<kind>-<pid>"; process.kill(pid, 0) answers existence without signalling
+ * (ESRCH = gone, EPERM = exists but owned elsewhere). Returns null when the
+ * writer is not a parseable "<kind>-<pid>" (e.g. the legacy status.json).
+ */
+export function writerProcessAlive(writer) {
+  if (typeof writer !== 'string') return null;
+  const m = /-(\d+)$/.exec(writer);
+  if (!m) return null;
+  const pid = Number(m[1]);
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  try { process.kill(pid, 0); return true; }
+  catch (err) {
+    if (err?.code === 'ESRCH') return false;
+    if (err?.code === 'EPERM') return true;
+    return null;
+  }
+}
+
 /** Merge fresh shards (plus the legacy status.json during transition). */
 export function readMergedStatus({ excludeWriter } = {}) {
   const jobs = [];
@@ -39,7 +59,18 @@ export function readMergedStatus({ excludeWriter } = {}) {
       const shard = JSON.parse(raw);
       if (shard.writer === excludeWriter) return;
       if (now - +new Date(shard.updatedAt) > SHARD_FRESH_MS) return;
-      for (const job of shard.jobs ?? []) jobs.push({ ...job, origin: shard.writer ?? 'legacy' });
+      // WPC10: expose the owning writer's liveness and last-write time so the
+      // panel can flag running jobs whose instance died (orphans) instead of
+      // showing them as running forever or dropping them silently.
+      const writerAlive = writerProcessAlive(shard.writer);
+      for (const job of shard.jobs ?? []) {
+        jobs.push({
+          ...job,
+          origin: shard.writer ?? 'legacy',
+          originWriterAlive: writerAlive,
+          originShardUpdatedAt: typeof shard.updatedAt === 'string' ? shard.updatedAt : null,
+        });
+      }
     } catch {}
   };
   try {

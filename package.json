@@ -115,6 +115,8 @@
     "agents",
     "commands",
     "codex",
+    "agy",
+    "grok",
     "statusline",
     "cordis.patch.yml",
     "worker.cordis.yml",

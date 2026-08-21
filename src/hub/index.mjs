@@ -451,8 +451,10 @@ export async function apply(ctx) {
           // Cache-busted import: the installer must always run the code
           // currently on disk, not whatever this process first loaded —
           // a stale cached copy once re-broke user settings after a fix.
-          const { installClaudeCode, installCodex, installHudSegment, uninstallClaudeCode, uninstallCodex } =
-            await import(`../install/install.mjs?t=${Date.now()}`);
+          const {
+            installClaudeCode, installCodex, installHudSegment, uninstallClaudeCode, uninstallCodex,
+            installAgy, installGrok, uninstallAgy, uninstallGrok,
+          } = await import(`../install/install.mjs?t=${Date.now()}`);
           if (target === 'claude') {
             const base = await installClaudeCode({ statusline: !!statusline });
             const hud = installHudSegment({});
@@ -462,9 +464,13 @@ export async function apply(ctx) {
             });
           }
           if (target === 'codex') return sendJson(res, 200, installCodex({}));
+          if (target === 'agy') return sendJson(res, 200, installAgy({}));
+          if (target === 'grok') return sendJson(res, 200, installGrok({}));
           if (target === 'claude-uninstall') return sendJson(res, 200, uninstallClaudeCode({}));
           if (target === 'codex-uninstall') return sendJson(res, 200, uninstallCodex({}));
-          return sendJson(res, 400, { ok: false, error: 'target must be claude | codex | claude-uninstall | codex-uninstall' });
+          if (target === 'agy-uninstall') return sendJson(res, 200, uninstallAgy({}));
+          if (target === 'grok-uninstall') return sendJson(res, 200, uninstallGrok({}));
+          return sendJson(res, 400, { ok: false, error: 'target must be claude | codex | agy | grok | claude-uninstall | codex-uninstall | agy-uninstall | grok-uninstall' });
         } catch (err) {
           return sendJson(res, 500, { ok: false, error: err?.message ?? String(err) });
         }

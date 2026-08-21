@@ -1,8 +1,8 @@
 // One-click installers: register the Claude Code plugin persistently and
-// render Codex agent roles with real paths. Called from the CLI entry or the
-// DSH settings page. All edits are backed up and idempotent.
+// render Codex / agy / grok agent roles with real paths. Called from the CLI
+// entry or the DSH settings page. All edits are backed up and idempotent.
 
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync, rmSync, rmdirSync } from 'node:fs';
 import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -23,6 +23,26 @@ function backup(file) {
 
 function readJson(file, fallback) {
   try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return fallback; }
+}
+
+function readText(file) {
+  try { return readFileSync(file, 'utf8'); } catch { return ''; }
+}
+
+/**
+ * Remove the [header] section (plus any trailing blank lines) from TOML text.
+ * Leaves every other section byte-for-byte intact. Returns input unchanged
+ * when the section is absent.
+ */
+function removeTomlSection(toml, header) {
+  const lines = toml.split('\n');
+  const start = lines.findIndex((l) => l.trim() === '[' + header + ']');
+  if (start === -1) return toml;
+  let end = start + 1;
+  while (end < lines.length && !/^\s*\[/.test(lines[end])) end++;
+  while (end < lines.length && lines[end].trim() === '') end++;
+  lines.splice(start, end - start);
+  return lines.join('\n');
 }
 
 // One-time migration from the pre-rename config dir (dsh-workers → dsh-crew).
@@ -92,7 +112,18 @@ export function installStatus({ home = homedir() } = {}) {
   const hudWired = typeof settings.statusLine?.command === 'string'
     && settings.statusLine.command.includes('worker-segment.sh');
   const codexInstalled = existsSync(join(home, '.codex', 'agents', 'ds-flash.toml'));
-  return { claude: { installed: claudeInstalled, hud: hudWired }, codex: { installed: codexInstalled } };
+  const agyMcp = readJson(join(home, '.gemini', 'config', 'mcp_config.json'), {});
+  const agyInstalled = !!(agyMcp.mcpServers && agyMcp.mcpServers['dsh-crew'])
+    || existsSync(join(home, '.gemini', 'config', 'agents', 'ds-flash.md'));
+  const grokTxt = readText(join(home, '.grok', 'config.toml'));
+  const grokInstalled = grokTxt.includes('[mcp_servers.dsh-crew]')
+    || existsSync(join(home, '.grok', 'agents', 'ds-flash.md'));
+  return {
+    claude: { installed: claudeInstalled, hud: hudWired },
+    codex: { installed: codexInstalled },
+    agy: { installed: agyInstalled },
+    grok: { installed: grokInstalled },
+  };
 }
 
 export function uninstallCodex({ home = homedir() } = {}) {
@@ -221,6 +252,191 @@ export function installCodex({ home = homedir(), scope } = {}) {
     actions.push(`prompt: ${join(promptsDir, f)}`);
   }
   return { ok: true, actions };
+}
+
+// ---------- agy (Antigravity CLI) ----------
+// Global MCP config: ~/.gemini/config/mcp_config.json
+//   { "mcpServers": { "<name>": { "command", "args", "disabled", "env"? } } }
+// Global agents: ~/.gemini/config/agents/<name>.md (frontmatter: name,
+//   description required; model flash|pro, subagent, tools, ... optional).
+// Global skills: ~/.gemini/config/skills/<name>/SKILL.md.
+// After a server runs once, agy keeps tool-schema caches under
+// ~/.gemini/{antigravity,antigravity-cli,antigravity-ide}/mcp/<name>/ —
+// uninstall removes those too.
+
+export function installAgy({ home = homedir() } = {}) {
+  const actions = [];
+  const serverPath = join(ROOT, 'lib', 'server.mjs');
+  if (!existsSync(serverPath)) {
+    actions.push(`warning: ${serverPath} missing — run pnpm build:mcp so the registered server can start`);
+  }
+
+  // 1. MCP server entry (idempotent; existing entry is replaced).
+  const mcpFile = join(home, '.gemini', 'config', 'mcp_config.json');
+  mkdirSync(dirname(mcpFile), { recursive: true });
+  const bak = backup(mcpFile);
+  if (bak) actions.push(`backup: ${bak}`);
+  const cfg = readJson(mcpFile, {});
+  cfg.mcpServers = cfg.mcpServers ?? {};
+  cfg.mcpServers['dsh-crew'] = { command: 'node', args: [serverPath], disabled: false };
+  writeFileSync(mcpFile, JSON.stringify(cfg, null, 2) + '\n');
+  actions.push(`mcp: registered dsh-crew (node ${serverPath}) in ${mcpFile}`);
+
+  // 2. Agent definitions (no path rendering needed — agy reads the global MCP
+  //    config itself, so the roles never embed a server path).
+  const agentsDir = join(home, '.gemini', 'config', 'agents');
+  mkdirSync(agentsDir, { recursive: true });
+  for (const f of ['ds-flash.md', 'ds-pro.md']) {
+    const dest = join(agentsDir, f);
+    const b = backup(dest);
+    if (b) actions.push(`backup: ${b}`);
+    writeFileSync(dest, readFileSync(join(ROOT, 'agy', 'agents', f), 'utf8'));
+    actions.push(`agent: ${dest}`);
+  }
+
+  // 3. Skills (agy's command/prompt packaging — /skills in the CLI).
+  for (const s of ['dsh-config', 'dsh-status']) {
+    const dest = join(home, '.gemini', 'config', 'skills', s, 'SKILL.md');
+    mkdirSync(dirname(dest), { recursive: true });
+    const b = backup(dest);
+    if (b) actions.push(`backup: ${b}`);
+    writeFileSync(dest, readFileSync(join(ROOT, 'agy', 'skills', s, 'SKILL.md'), 'utf8'));
+    actions.push(`skill: ${dest}`);
+  }
+  return { ok: true, actions };
+}
+
+export function uninstallAgy({ home = homedir() } = {}) {
+  const actions = [];
+
+  const mcpFile = join(home, '.gemini', 'config', 'mcp_config.json');
+  const cfg = readJson(mcpFile, null);
+  if (cfg && cfg.mcpServers && cfg.mcpServers['dsh-crew']) {
+    backup(mcpFile);
+    delete cfg.mcpServers['dsh-crew'];
+    writeFileSync(mcpFile, JSON.stringify(cfg, null, 2) + '\n');
+    actions.push(`mcp: removed dsh-crew from ${mcpFile} (backup kept)`);
+  }
+
+  for (const f of ['ds-flash.md', 'ds-pro.md']) {
+    const p = join(home, '.gemini', 'config', 'agents', f);
+    if (existsSync(p)) {
+      backup(p);
+      rmSync(p);
+      actions.push(`removed: ${p} (backup kept)`);
+    }
+  }
+
+  for (const s of ['dsh-config', 'dsh-status']) {
+    const dir = join(home, '.gemini', 'config', 'skills', s);
+    const sk = join(dir, 'SKILL.md');
+    if (existsSync(sk)) {
+      rmSync(sk);
+      try { rmdirSync(dir); } catch {}
+      actions.push(`removed skill: ${dir}`);
+    }
+  }
+
+  // Tool-schema caches (regenerable — agy re-creates them on next server use).
+  for (const flavour of ['antigravity', 'antigravity-cli', 'antigravity-ide']) {
+    const p = join(home, '.gemini', flavour, 'mcp', 'dsh-crew');
+    if (existsSync(p)) {
+      rmSync(p, { recursive: true, force: true });
+      actions.push(`removed mcp cache: ${p}`);
+    }
+  }
+
+  return { ok: true, actions: actions.length ? actions : ['nothing to remove'] };
+}
+
+// ---------- grok (Grok Build CLI) ----------
+// User MCP config: ~/.grok/config.toml
+//   [mcp_servers.<name>]
+//   command = "..."   args = [...]   enabled = true
+// User agents: ~/.grok/agents/<name>.md (frontmatter: name, description,
+//   prompt_mode, model, permission_mode, tools, mcpInheritance, ...).
+// User slash commands: ~/.grok/commands/<name>.md (flat files, CC legacy
+//   layout — filename stem becomes the command, $ARGUMENTS is substituted).
+
+export function installGrok({ home = homedir() } = {}) {
+  const actions = [];
+  const serverPath = join(ROOT, 'lib', 'server.mjs');
+  if (!existsSync(serverPath)) {
+    actions.push(`warning: ${serverPath} missing — run pnpm build:mcp so the registered server can start`);
+  }
+
+  // 1. MCP server section in ~/.grok/config.toml (idempotent: replace the
+  //    existing [mcp_servers.dsh-crew] block if present, keep the rest).
+  const cfgFile = join(home, '.grok', 'config.toml');
+  mkdirSync(dirname(cfgFile), { recursive: true });
+  const bak = backup(cfgFile);
+  if (bak) actions.push(`backup: ${bak}`);
+  let toml = readText(cfgFile);
+  toml = removeTomlSection(toml, 'mcp_servers.dsh-crew').replace(/\n+$/, '');
+  toml += `\n\n[mcp_servers.dsh-crew]\ncommand = "node"\nargs = ["${serverPath}"]\nenabled = true\n`;
+  writeFileSync(cfgFile, toml);
+  actions.push(`mcp: registered dsh-crew (node ${serverPath}) in ${cfgFile}`);
+
+  // 2. Agent definitions.
+  const agentsDir = join(home, '.grok', 'agents');
+  mkdirSync(agentsDir, { recursive: true });
+  for (const f of ['ds-flash.md', 'ds-pro.md']) {
+    const dest = join(agentsDir, f);
+    const b = backup(dest);
+    if (b) actions.push(`backup: ${b}`);
+    writeFileSync(dest, readFileSync(join(ROOT, 'grok', 'agents', f), 'utf8'));
+    actions.push(`agent: ${dest}`);
+  }
+
+  // 3. Slash commands (/dsh-config, /dsh-status).
+  const commandsDir = join(home, '.grok', 'commands');
+  mkdirSync(commandsDir, { recursive: true });
+  for (const f of ['dsh-config.md', 'dsh-status.md']) {
+    const dest = join(commandsDir, f);
+    const b = backup(dest);
+    if (b) actions.push(`backup: ${b}`);
+    writeFileSync(dest, readFileSync(join(ROOT, 'grok', 'commands', f), 'utf8'));
+    actions.push(`command: ${dest}`);
+  }
+  return { ok: true, actions };
+}
+
+export function uninstallGrok({ home = homedir() } = {}) {
+  const actions = [];
+
+  const cfgFile = join(home, '.grok', 'config.toml');
+  if (existsSync(cfgFile)) {
+    const before = readText(cfgFile);
+    let after = removeTomlSection(before, 'mcp_servers.dsh-crew');
+    // Drop dsh-crew from any disabled_mcp_servers list grok may have written.
+    after = after.split('\n').map((l) => (l.includes('disabled_mcp_servers') && l.includes('dsh-crew')
+      ? l.replace(/"dsh-crew"\s*,?\s*/g, '').replace(/,\s*\]/g, ']')
+      : l)).join('\n');
+    if (after !== before) {
+      backup(cfgFile);
+      writeFileSync(cfgFile, after.replace(/\n{3,}$/, '\n'));
+      actions.push(`mcp: removed dsh-crew from ${cfgFile} (backup kept)`);
+    }
+  }
+
+  for (const f of ['ds-flash.md', 'ds-pro.md']) {
+    const p = join(home, '.grok', 'agents', f);
+    if (existsSync(p)) {
+      backup(p);
+      rmSync(p);
+      actions.push(`removed: ${p} (backup kept)`);
+    }
+  }
+
+  for (const f of ['dsh-config.md', 'dsh-status.md']) {
+    const p = join(home, '.grok', 'commands', f);
+    if (existsSync(p)) {
+      rmSync(p);
+      actions.push(`removed: ${p}`);
+    }
+  }
+
+  return { ok: true, actions: actions.length ? actions : ['nothing to remove'] };
 }
 
 /**

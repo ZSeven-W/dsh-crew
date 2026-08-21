@@ -5,11 +5,17 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { startJob, waitJob, cancelJob, listJobs, getJob, jobView } from './jobs.mjs';
 import { hubAvailable, hub } from './hub-client.mjs';
+import { startCliJob } from './cli-workers.mjs';
+import { listProfiles, resolveProfile } from './worker-profiles.mjs';
+import { readInheritedOrigin, extendOrigin, DEFAULT_ORIGIN_DEPTH_LIMIT } from './origin-guard.mjs';
+import { acquireCwdLock, releaseCwdLockByJobId, updateCwdLockHolder, getCwdLocks, CwdLockError } from './cwd-lock.mjs';
 
 const server = new McpServer({ name: 'dsh-crew', version: '0.1.0-rc.4' });
 
-const tierSchema = z.enum(['flash', 'pro']).optional().describe('Worker model tier: flash = deepseek-v4-flash (simple tasks), pro = deepseek-v4-pro (harder tasks). Omit to use the session default.');
-const effortSchema = z.enum(['off', 'high', 'max']).optional().describe('Reasoning effort for the worker. Omit to use the session default.');
+const tierSchema = z.enum(['flash', 'pro']).optional().describe('Worker model tier: flash = deepseek-v4-flash (simple tasks), pro = deepseek-v4-pro (harder tasks). Omit to use the session default. Ignored when worker= is set.');
+const effortSchema = z.enum(['off', 'high', 'max']).optional().describe('Reasoning effort for the worker. Omit to use the session default. With worker= it only applies when passed explicitly and the profile supports it (agy maps to low/medium/high).');
+const workerSchema = z.string().optional().describe('Named CLI worker profile (e.g. "agy" or "grok"). When set, dispatch bypasses tier/mode and runs the task through that external coding CLI; the profile pins backend×model×effort. See dsh_worker_config output, worker_profiles field, for the available profiles.');
+const allowConcurrentCwdSchema = z.boolean().optional().describe('Allow this dispatch even though another running worker already holds the same cwd (workspace) lock. Default false: concurrent writers corrupt a shared repo, so the second dispatch is refused with the holder info instead of queueing. Set true only for read-only tasks.');
 
 // Session-level configuration. This MCP server process lives exactly as long
 // as one Claude Code / Codex session, so plain memory IS session scope.
@@ -27,6 +33,8 @@ const sessionConfig = {
   escalate_on_failure: globalDefaults.escalate_on_failure,
   preset_flash: globalDefaults.preset_flash ?? 'default',
   preset_pro: globalDefaults.preset_pro ?? 'default',
+  // WPC9: max worker→worker nesting depth before a dispatch is refused.
+  origin_depth_limit: DEFAULT_ORIGIN_DEPTH_LIMIT,
 };
 
 function presetForTier(tier) {
@@ -61,6 +69,58 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const ORCHESTRATOR = detectOrchestrator();
 
+// ---------- WPC9 guardrails ----------
+
+// Origin chain this crew instance inherited from whoever spawned it (read at
+// startup from the env written by the dispatching crew — origin-guard.mjs).
+// Every dispatch appends its own hop and refuses loops / over-deep chains
+// BEFORE anything is spawned, so recursion can never start burning quota.
+const INHERITED_ORIGIN = readInheritedOrigin(process.env);
+const depthLimitNow = () => sessionConfig.origin_depth_limit ?? DEFAULT_ORIGIN_DEPTH_LIMIT;
+
+// Hub jobs run inside the DSH host and have no settle callback on this side,
+// so the origin recorded at spawn time is kept here and re-attached to every
+// hub view this session returns (the hub itself ignores the extra spawn
+// fields until the hub side adopts them).
+const hubOrigins = new Map();
+
+function attachOrigin(view, jobId) {
+  if (!view || typeof view !== 'object') return view;
+  const o = hubOrigins.get(jobId);
+  if (o && view.origin_depth === undefined) {
+    view.origin_depth = o.depth;
+    view.origin_chain = o.chain;
+  }
+  return view;
+}
+
+/** Readable refusal payload for the two origin guard checks. */
+function originRefusal(res) {
+  return text({ error: `dispatch refused by origin guard: ${res.error.reason}`, ...res.error });
+}
+
+/**
+ * Acquire the cwd advisory lock for a hub dispatch (job id is unknown until
+ * the hub answers, so it is backfilled by updateCwdLockHolder). A conflict
+ * against a hub-held lock is re-checked once against the hub: a hub job can
+ * settle without this side ever hearing about it, and a stale lock must not
+ * permanently block the cwd.
+ */
+async function acquireDispatchLock({ cwd, backend, mode, allowConcurrent }) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return acquireCwdLock({ cwd, jobId: null, backend, mode, startedAt: new Date().toISOString(), allowConcurrent });
+    } catch (err) {
+      if (!(err instanceof CwdLockError) || attempt > 0 || err.holder.mode !== 'hub') throw err;
+      let settled = false;
+      try { settled = (await hub.get(err.holder.jobId, 0)).status !== 'running'; }
+      catch (e) { if (String(e?.message ?? e).includes('no such job')) settled = true; }
+      if (!settled) throw err;
+      releaseCwdLockByJobId(err.holder.jobId);
+    }
+  }
+}
+
 function dispatchDisabled() {
   return text({
     error: 'worker dispatch is disabled for this session (set via dsh_worker_config). Report this to the user instead of doing the task yourself.',
@@ -76,35 +136,88 @@ async function resolveMode() {
 
 server.registerTool('dsh_run_worker', {
   title: 'Run DSH worker (blocking)',
-  description: 'Delegate a task to a DSH (DeepSeek Harness) coding agent and wait for its final result. The worker is a full DSH agent with its own tools and sandbox. Use tier=flash for simple tasks, tier=pro for harder ones. Blocks until the worker finishes.',
+  description: 'Delegate a task to a DSH (DeepSeek Harness) coding agent and wait for its final result. The worker is a full DSH agent with its own tools and sandbox. Use tier=flash for simple tasks, tier=pro for harder ones. Blocks until the worker finishes. Dispatches are guarded: worker→worker recursion (origin chain depth/loop) and two workers writing the same cwd at once are refused with readable errors; pass allow_concurrent_cwd: true only for read-only parallel tasks.',
   inputSchema: {
     task: z.string().describe('Full task description for the worker, self-contained'),
     tier: tierSchema,
     effort: effortSchema,
+    worker: workerSchema,
     cwd: z.string().optional().describe('Workspace directory for the worker (defaults to current project)'),
     timeout_seconds: z.number().int().positive().max(7200).optional(),
+    allow_concurrent_cwd: allowConcurrentCwdSchema,
   },
-}, async ({ task, tier, effort, cwd, timeout_seconds }) => {
+}, async ({ task, tier, effort, worker, cwd, timeout_seconds, allow_concurrent_cwd }) => {
   if (!sessionConfig.enabled) return dispatchDisabled();
   const workDir = cwd ?? process.cwd();
   const e = effort ?? sessionConfig.default_effort;
   const timeout = timeout_seconds ?? sessionConfig.default_timeout_seconds;
+  const depthLimit = depthLimitNow();
+
+  // CLI profile dispatch: worker= names a profile and bypasses the
+  // hub/standalone tier logic entirely (no tier policy, no escalation — the
+  // profile pins backend×model×effort). Calls without worker= are untouched.
+  if (worker) {
+    const profile = resolveProfile(worker); // throws listing the available profile names
+    const origin = extendOrigin({ inherited: INHERITED_ORIGIN, backend: profile.backend, cwd: workDir, source: ORCHESTRATOR, depthLimit });
+    if (!origin.ok) return originRefusal(origin);
+    let job;
+    try {
+      job = await startCliJob({ worker, task, cwd: workDir, timeoutMs: timeout * 1000, source: ORCHESTRATOR, effort, origin: origin.origin, allowConcurrentCwd: !!allow_concurrent_cwd });
+    } catch (err) {
+      if (err instanceof CwdLockError) return text({ error: err.message, rejected_by: 'cwd-lock', holder: err.holder });
+      throw err;
+    }
+    await waitJob(job.id, timeout * 1000);
+    const view = jobView(job, { withResult: true });
+    if (view.status === 'running') return text({ ...view, note: `still running after ${timeout}s; poll with dsh_worker_result` });
+    return text(view);
+  }
 
   const runOnce = async (t) => {
     if ((await resolveMode()) === 'hub') {
-      const spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t) });
+      const origin = extendOrigin({ inherited: INHERITED_ORIGIN, backend: 'hub', cwd: workDir, source: ORCHESTRATOR, depthLimit });
+      if (!origin.ok) return { refusal: originRefusal(origin) };
+      let lock;
+      try {
+        lock = await acquireDispatchLock({ cwd: workDir, backend: 'hub', mode: 'hub', allowConcurrent: !!allow_concurrent_cwd });
+      } catch (err) {
+        if (err instanceof CwdLockError) return { refusal: text({ error: err.message, rejected_by: 'cwd-lock', holder: err.holder }) };
+        throw err;
+      }
+      let spawned;
+      try {
+        spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t), origin_chain: origin.origin.chain, origin_depth: origin.origin.depth });
+        updateCwdLockHolder({ cwd: workDir, jobId: spawned.id });
+        hubOrigins.set(spawned.id, origin.origin);
+      } catch (err) {
+        lock.release();
+        throw err;
+      }
       // The hub client slices this wait internally; a single request that
       // waits minutes would be cut by undici's 300 s header timeout and
       // reported as a bare "fetch failed" while the job kept running.
-      return await hub.get(spawned.id, timeout);
+      const got = await hub.get(spawned.id, timeout);
+      attachOrigin(got, spawned.id);
+      if (got.status !== 'running') releaseCwdLockByJobId(spawned.id);
+      return { view: got };
     }
-    const job = await startJob({ task, tier: t, effort: e, cwd: workDir, timeoutMs: timeout * 1000, source: ORCHESTRATOR });
+    const origin = extendOrigin({ inherited: INHERITED_ORIGIN, backend: 'standalone', cwd: workDir, source: ORCHESTRATOR, depthLimit });
+    if (!origin.ok) return { refusal: originRefusal(origin) };
+    let job;
+    try {
+      job = await startJob({ task, tier: t, effort: e, cwd: workDir, timeoutMs: timeout * 1000, source: ORCHESTRATOR, origin: origin.origin, allowConcurrentCwd: !!allow_concurrent_cwd });
+    } catch (err) {
+      if (err instanceof CwdLockError) return { refusal: text({ error: err.message, rejected_by: 'cwd-lock', holder: err.holder }) };
+      throw err;
+    }
     await waitJob(job.id, timeout * 1000);
-    return jobView(job, { withResult: true });
+    return { view: jobView(job, { withResult: true }) };
   };
 
   const firstTier = applyTierPolicy(tier);
-  let job = await runOnce(firstTier);
+  let res = await runOnce(firstTier);
+  if (res.refusal) return res.refusal;
+  let job = res.view;
   if (job.status === 'running') return text({ ...job, note: `still running after ${timeout}s; poll with dsh_worker_result` });
 
   // Escalate on evidence, not prediction: a failed flash run retries once on
@@ -112,7 +225,9 @@ server.registerTool('dsh_run_worker', {
   if (job.status === 'failed' && sessionConfig.escalate_on_failure
       && firstTier === 'flash' && sessionConfig.tier_policy !== 'flash-only') {
     const firstError = job.error ?? job.stopReason ?? 'unknown failure';
-    job = await runOnce('pro');
+    res = await runOnce('pro');
+    if (res.refusal) return res.refusal;
+    job = res.view;
     if (job.status === 'running') return text({ ...job, escalated: true, note: `escalated to pro, still running after ${timeout}s; poll with dsh_worker_result` });
     return text({ ...job, escalated: true, flash_failure: String(firstError).slice(0, 200) });
   }
@@ -121,7 +236,7 @@ server.registerTool('dsh_run_worker', {
 
 server.registerTool('dsh_worker_config', {
   title: 'Session worker configuration',
-  description: 'Read or update session-level worker settings: enable/disable dispatch, default tier/effort/timeout, and execution mode (auto = prefer hub, hub = require the DSH hub, standalone = never use it). Call with no arguments to read the current configuration. Settings last for this session only.',
+  description: 'Read or update session-level worker settings: enable/disable dispatch, default tier/effort/timeout, and execution mode (auto = prefer hub, hub = require the DSH hub, standalone = never use it). Call with no arguments to read the current configuration; the output includes worker_profiles — named external-CLI backends (agy, grok) usable via the worker= parameter of dsh_run_worker / dsh_spawn_worker — and origin, the inherited worker→worker dispatch chain with its depth limit. Settings last for this session only.',
   inputSchema: {
     enabled: z.boolean().optional().describe('false = refuse all worker dispatch this session'),
     default_tier: z.enum(['flash', 'pro']).optional(),
@@ -132,41 +247,115 @@ server.registerTool('dsh_worker_config', {
     escalate_on_failure: z.boolean().optional().describe('retry a failed blocking flash run once on pro'),
     preset_flash: z.string().optional().describe('hub-mode agent preset for flash workers (preset id, or "default")'),
     preset_pro: z.string().optional().describe('hub-mode agent preset for pro workers (preset id, or "default")'),
+    origin_depth_limit: z.number().int().min(1).max(32).optional().describe('Max worker→worker origin-chain depth (default 3). Deeper dispatches are refused to stop recursive self-amplification; raise only for deliberate deep delegation.'),
     reset: z.boolean().optional().describe('true = restore all defaults first'),
   },
 }, async ({ reset, ...patch }) => {
-  if (reset) Object.assign(sessionConfig, { enabled: true, ...globalDefaults });
+  if (reset) {
+    Object.assign(sessionConfig, { enabled: true, ...globalDefaults });
+    sessionConfig.origin_depth_limit = DEFAULT_ORIGIN_DEPTH_LIMIT;
+  }
   for (const [k, v] of Object.entries(patch)) if (v !== undefined) sessionConfig[k] = v;
-  return text({ ...sessionConfig, hub_reachable: await hubAvailable() });
+  return text({
+    ...sessionConfig,
+    hub_reachable: await hubAvailable(),
+    worker_profiles: listProfiles(),
+    origin: { chain: INHERITED_ORIGIN.chain, depth: INHERITED_ORIGIN.depth, depth_limit: depthLimitNow() },
+  });
 });
 
 server.registerTool('dsh_spawn_worker', {
   title: 'Spawn DSH worker (async)',
-  description: 'Start a DSH (DeepSeek Harness) coding agent in the background and return immediately with a job id. Use dsh_worker_status / dsh_worker_result to follow up. Good for fanning out several workers in parallel.',
+  description: 'Start a DSH (DeepSeek Harness) coding agent in the background and return immediately with a job id. Use dsh_worker_status / dsh_worker_result to follow up. Good for fanning out several workers in parallel. Dispatches are guarded: worker→worker recursion (origin chain depth/loop) and two workers writing the same cwd at once are refused with readable errors; pass allow_concurrent_cwd: true only for read-only parallel tasks.',
   inputSchema: {
     task: z.string(),
     tier: tierSchema,
     effort: effortSchema,
+    worker: workerSchema,
     cwd: z.string().optional(),
+    allow_concurrent_cwd: allowConcurrentCwdSchema,
   },
-}, async ({ task, tier, effort, cwd }) => {
+}, async ({ task, tier, effort, worker, cwd, allow_concurrent_cwd }) => {
   if (!sessionConfig.enabled) return dispatchDisabled();
   const workDir = cwd ?? process.cwd();
+  const depthLimit = depthLimitNow();
+  if (worker) {
+    // CLI profile dispatch; no hub/standalone involvement, no tier policy.
+    const profile = resolveProfile(worker);
+    const origin = extendOrigin({ inherited: INHERITED_ORIGIN, backend: profile.backend, cwd: workDir, source: ORCHESTRATOR, depthLimit });
+    if (!origin.ok) return originRefusal(origin);
+    try {
+      const job = await startCliJob({ worker, task, cwd: workDir, source: ORCHESTRATOR, effort, origin: origin.origin, allowConcurrentCwd: !!allow_concurrent_cwd });
+      return text(jobView(job));
+    } catch (err) {
+      if (err instanceof CwdLockError) return text({ error: err.message, rejected_by: 'cwd-lock', holder: err.holder });
+      throw err;
+    }
+  }
   const t = applyTierPolicy(tier);
   const e = effort ?? sessionConfig.default_effort;
-  if ((await resolveMode()) === 'hub') return text(await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t) }));
-  const job = await startJob({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR });
-  return text(jobView(job));
+  if ((await resolveMode()) === 'hub') {
+    const origin = extendOrigin({ inherited: INHERITED_ORIGIN, backend: 'hub', cwd: workDir, source: ORCHESTRATOR, depthLimit });
+    if (!origin.ok) return originRefusal(origin);
+    let lock;
+    try {
+      lock = await acquireDispatchLock({ cwd: workDir, backend: 'hub', mode: 'hub', allowConcurrent: !!allow_concurrent_cwd });
+    } catch (err) {
+      if (err instanceof CwdLockError) return text({ error: err.message, rejected_by: 'cwd-lock', holder: err.holder });
+      throw err;
+    }
+    let spawned;
+    try {
+      spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t), origin_chain: origin.origin.chain, origin_depth: origin.origin.depth });
+      updateCwdLockHolder({ cwd: workDir, jobId: spawned.id });
+      hubOrigins.set(spawned.id, origin.origin);
+    } catch (err) {
+      lock.release();
+      throw err;
+    }
+    attachOrigin(spawned, spawned.id);
+    return text(spawned);
+  }
+  const origin = extendOrigin({ inherited: INHERITED_ORIGIN, backend: 'standalone', cwd: workDir, source: ORCHESTRATOR, depthLimit });
+  if (!origin.ok) return originRefusal(origin);
+  try {
+    const job = await startJob({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, origin: origin.origin, allowConcurrentCwd: !!allow_concurrent_cwd });
+    return text(jobView(job));
+  } catch (err) {
+    if (err instanceof CwdLockError) return text({ error: err.message, rejected_by: 'cwd-lock', holder: err.holder });
+    throw err;
+  }
 });
 
 server.registerTool('dsh_worker_status', {
   title: 'DSH worker status',
-  description: 'List all DSH worker jobs in this session with live progress (turn/step, current tool, token usage).',
+  description: 'List all DSH worker jobs in this session with live progress (turn/step, current tool, token usage) plus the cwd advisory locks (kind: "cwd-lock" entries show which workspace is held by which running job).',
   inputSchema: {},
 }, async () => {
+  const hubUp = await hubAvailable();
+  const remote = hubUp ? await hub.list().catch(() => null) : [];
+  const remoteJobs = remote ?? [];
+  if (remote !== null) {
+    // The list actually arrived: hub-held locks whose job is settled or gone
+    // release now. A failed fetch (remote === null) must NOT release locks —
+    // a down hub says nothing about whether its jobs still run.
+    const byId = new Map(remoteJobs.map((j) => [j.id, j]));
+    for (const l of getCwdLocks()) {
+      if (l.holder.mode !== 'hub') continue;
+      const j = byId.get(l.holder.jobId);
+      if (j === undefined || j.status !== 'running') releaseCwdLockByJobId(l.holder.jobId);
+    }
+  }
+  for (const j of remoteJobs) attachOrigin(j, j.id);
   const local = listJobs().map((j) => jobView(j));
-  const remote = (await hubAvailable()) ? await hub.list().catch(() => []) : [];
-  return text([...remote, ...local]);
+  const locks = getCwdLocks().map((l, i) => ({
+    kind: 'cwd-lock',
+    id: `cwd-lock-${i + 1}`,
+    cwd: l.cwd,
+    holder: l.holder,
+    note: 'advisory workspace lock: a running worker holds this cwd, so a new dispatch to it is refused (unless allow_concurrent_cwd is set)',
+  }));
+  return text([...remoteJobs, ...local, ...locks]);
 });
 
 server.registerTool('dsh_worker_result', {
@@ -179,7 +368,12 @@ server.registerTool('dsh_worker_result', {
 }, async ({ job_id, wait_seconds }) => {
   if (job_id.startsWith('hub-')) {
     if (!(await hubAvailable())) return text({ error: 'hub not reachable' });
-    return text(await hub.get(job_id, wait_seconds).catch((e) => ({ error: e.message })));
+    const view = await hub.get(job_id, wait_seconds).catch((e) => ({ error: e.message }));
+    if (view && view.id) {
+      attachOrigin(view, view.id);
+      if (view.status !== 'running') releaseCwdLockByJobId(job_id);
+    }
+    return text(view);
   }
   if (!getJob(job_id)) return text({ error: `no such job: ${job_id}` });
   const job = await waitJob(job_id, wait_seconds > 0 ? wait_seconds * 1000 : 1);
@@ -193,7 +387,12 @@ server.registerTool('dsh_worker_cancel', {
 }, async ({ job_id }) => {
   if (job_id.startsWith('hub-')) {
     if (!(await hubAvailable())) return text({ error: 'hub not reachable' });
-    return text(await hub.cancel(job_id).catch((e) => ({ error: e.message })));
+    const view = await hub.cancel(job_id).catch((e) => ({ error: e.message }));
+    if (view && view.id) {
+      attachOrigin(view, view.id);
+      releaseCwdLockByJobId(job_id); // cancelled = holder being disposed
+    }
+    return text(view);
   }
   if (!getJob(job_id)) return text({ error: `no such job: ${job_id}` });
   return text(jobView(await cancelJob(job_id), { withResult: true }));
