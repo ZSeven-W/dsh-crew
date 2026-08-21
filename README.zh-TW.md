@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> • 目前外掛程式版本: <code>0.1.0-rc.3</code> • 測試版本 DSH <code>0.1.0-rc.6</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> • 目前外掛程式版本: <code>0.1.0-rc.3</code> • 測試版本 DSH <code>0.1.1-rc.1</code></sub>
 </p>
 
 <p align="center">
