@@ -17,7 +17,7 @@ import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { describeFile } from './multimodal.mjs';
+import { describeFileWithProvenance } from './multimodal.mjs';
 import { tr } from './i18n.mjs';
 
 const VISION_PROVIDER = 'deepseek-vision';
@@ -109,9 +109,10 @@ export function installVisionRoute(ctx, getConfig) {
           const path = join(ATTACH_DIR, `${sha}.${ext}`);
           if (!existsSync(path)) writeFileSync(path, stored.data);
           const name = block.attachment?.name ?? `${sha}.${ext}`;
-          const desc = await describeFile(getConfig, path, tr(
+          const { text: desc, provider } = await describeFileWithProvenance(getConfig, path, tr(
             '详细描述这张图片：整体内容、布局结构、可见文字（逐字）、颜色与显著元素。',
             'Describe this image in detail: overall content, layout, any visible text (verbatim), colours and notable elements.'));
+          ctx.logger?.info?.(`dsh-crew: vision transcript for ${path} via ${provider}`);
           content.push({
             type: 'text',
             text: `${TRANSCRIPT_PREFIX(name)}\n${desc}\n${tr(
