@@ -2,42 +2,42 @@
 // global worker configuration, and the live jobs table.
 // Talks only to the plugin's own loopback routes.
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
-import { listProfiles } from '../worker-profiles.mjs';
-import { reconcileGhosts, displayJobs, heldWorkspaces, chainText, shortPath, statusInfoOf } from './jobs-view';
+import { reconcileGhosts, displayJobs, groupJobs, workspaceKey, basenameOf, abbrevPath, workspaceLocks, lockBadgeOf, statusInfoOf, ghostPidOf, procBadgeOf, dueProcProbes } from './jobs-view';
 
 // Build-time snapshot of the worker-profile registry — the same descriptors
 // dsh_worker_config returns as worker_profiles (name / backend / label /
 // model / effort / permission). The panel cannot call server tools and no
 // loopback route exposes the registry yet, so the list is bundled into the
 // client build; the source of truth stays src/worker-profiles.mjs.
-const WORKER_PROFILE_LIST: any[] = listProfiles();
 
 export const inject = ['slots', 'locale'];
 
 const API = '/_dsh/dsh-crew';
 
 // ---------------------------------------------------------------------------
-// Collapsible-section state: integrations and global config are one-time
-// setup, so their collapsed state is remembered per section in localStorage
-// (dsh-crew.settings.collapse.<section>). When localStorage is unavailable
-// (privacy mode, sandboxed iframe, …) we degrade to session-only memory.
-// First visit defaults to expanded.
+// Collapsible-state helpers. Integrations / global config are one-time setup
+// (dsh-crew.settings.collapse.<section>); per-workspace job groups and their
+// finished-job folds use dsh-crew.jobs.collapse.<workspace-hash> and
+// dsh-crew.settings.collapse.finished-jobs.<workspace-hash> (WPC13). When
+// localStorage is unavailable (privacy mode, sandboxed iframe, …) we degrade
+// to session-only memory. First visit defaults to expanded.
 const COLLAPSE_PREFIX = 'dsh-crew.settings.collapse.';
+const WS_COLLAPSE_PREFIX = 'dsh-crew.jobs.collapse.';
 const collapseSessionMemory: Record<string, boolean> = {};
 
-function readSectionCollapsed(section: string): boolean {
+function readCollapsed(key: string, defaultCollapsed = false): boolean {
   let stored: string | null = null;
-  try { stored = window.localStorage.getItem(COLLAPSE_PREFIX + section); } catch { /* storage unavailable */ }
+  try { stored = window.localStorage.getItem(key); } catch { /* storage unavailable */ }
   if (stored === '1') return true;
   if (stored === '0') return false;
-  return collapseSessionMemory[section] ?? false;
+  return collapseSessionMemory[key] ?? defaultCollapsed;
 }
-function persistSectionCollapsed(section: string, collapsed: boolean): void {
-  try { window.localStorage.setItem(COLLAPSE_PREFIX + section, collapsed ? '1' : '0'); }
-  catch { collapseSessionMemory[section] = collapsed; }
+function persistCollapsed(key: string, collapsed: boolean): void {
+  try { window.localStorage.setItem(key, collapsed ? '1' : '0'); }
+  catch { collapseSessionMemory[key] = collapsed; }
 }
 
 // Orphan ghosts (WPC10): running jobs the panel saw that later vanished from
@@ -61,13 +61,24 @@ function writeGhosts(ghosts: Record<string, any>): void {
 }
 
 /** Section open state + toggle, persisted under dsh-crew.settings.collapse.<section>. */
-function useCollapseSection(section: string): [boolean, () => void] {
-  const [collapsed, setCollapsed] = useState<boolean>(() => readSectionCollapsed(section));
+function useCollapseSection(section: string, defaultCollapsed = false): [boolean, () => void] {
+  const [collapsed, setCollapsed] = useState<boolean>(() => readCollapsed(COLLAPSE_PREFIX + section, defaultCollapsed));
   const toggle = useCallback(() => {
     const next = !collapsed;
     setCollapsed(next);
-    persistSectionCollapsed(section, next);
+    persistCollapsed(COLLAPSE_PREFIX + section, next);
   }, [section, collapsed]);
+  return [collapsed, toggle];
+}
+
+/** Per-workspace job-group collapse, persisted under dsh-crew.jobs.collapse.<workspaceKey> (WPC13). */
+function useWorkspaceCollapse(wsKey: string): [boolean, () => void] {
+  const [collapsed, setCollapsed] = useState<boolean>(() => readCollapsed(WS_COLLAPSE_PREFIX + wsKey));
+  const toggle = useCallback(() => {
+    const next = !collapsed;
+    setCollapsed(next);
+    persistCollapsed(WS_COLLAPSE_PREFIX + wsKey, next);
+  }, [wsKey, collapsed]);
   return [collapsed, toggle];
 }
 
@@ -119,12 +130,6 @@ const COPY = {
     cardRuntime: { t: '执行与连接', d: 'worker 会话跑在本实例内还是独立进程，单个任务的超时上限，以及 CC / Codex 探测本实例的地址。' },
     cardMM: { t: '视觉与生图', d: '给纯文本的 DSH 模型借来眼睛和画笔：describe_image、会话贴图转写与 generate_image 都用这里的设置。' },
     cardCustomProv: { t: '自定义 Provider', d: '接入自己的 API 或本地命令；保存后会出现在上面的视觉 / 生图 provider 选择里。' },
-    groupWorkers: 'Worker 档案',
-    cardWorkers: { t: '派发去处（外部 CLI）', d: 'dsh_run_worker / dsh_spawn_worker 收到 worker: 档案名 时绕过 tier / mode 逻辑，直派对应外部 CLI。档案 = backend × model × effort，列表来自插件内置注册表。' },
-    workerOptIn: '这些后端按次显式选用：派活时传 worker 参数指定，例如 worker: "grok"。不传则走 DSH 自身的 worker。',
-    modelCliDefault: 'CLI 默认', effortCliDefault: 'CLI 默认',
-    backendLabel: '后端', modelLabel: '模型', effortLabel: '推理', permissionLabel: '权限模式',
-    permBadge: { agy: '全放行 · 无受限模式', grok: 'always-approve · deny 规则仍生效' },
     modeDesc: { auto: 'auto · 优先 hub', hub: 'hub · 必须 hub', standalone: 'standalone · 独立进程' },
     save: '保存', saved: '已保存', jobs: 'Worker 任务', empty: '当前没有 worker 任务。',
     statusRunning: '运行中', statusStalled: '疑似卡住', statusDone: '完成', statusFailed: '失败', statusCancelled: '已取消', statusOrphaned: '失联',
@@ -132,11 +137,18 @@ const COPY = {
     orphanWriterGone: (origin: string) => `所属实例已消失：写入该状态的进程（${origin}）已不存在，任务随它一起终止（最后状态 running）`,
     orphanVanished: (ago: string) => `任务从状态源消失（最后状态 running，${ago} 前最后一次见到）。很可能随所属实例退出而死亡；如果它其实在两次刷新间正常结束了，可点 × 清除`,
     orphanDismiss: '清除这条失联记录',
-    heldCwds: '工作区占用', heldCwdsHint: '由「运行中」任务推导：对这些 cwd 的再次派发会被同仓锁拒绝，下面列出的就是错误里说的持有者（job / backend / 开始时间）。',
-    heldBy: '持有者', finishedJobs: '已结束',
+    procAliveBadge: '进程仍在',
+    procKill: '杀死',
+    procKilling: '终止中…',
+    procKillDone: '已向失联进程发送终止信号',
+    procKillAlreadyGone: '进程已不存在（可能已自行退出）',
+    procAliveBadgeTip: (pid: number) => `任务已失联，但其工作进程仍在运行（pid ${pid}）：很可能是派活宿主崩溃后留下的孤儿进程`,
+    procKillTip: (pid: number) => `杀死 pid ${pid}：先读取命令行校验确为 dsh-crew 工作进程（DSH 运行时 / agy / grok），再 SIGTERM，约 3 秒后仍存活则 SIGKILL`,
+    finishedJobs: '已结束',
+    noCwdGroup: '（未指定工作区）',
+    lockBadgeTip: (h: any) => `「${h?.cwd ?? '此工作区'}」正被运行中任务持锁（job ${h?.jobId} · backend ${h?.backend} · 开始于 ${h?.startedAt}）：对该 cwd 的再次派发会被拒绝，除非传 allow_concurrent_cwd: true。`,
     shardStale: (min: number) => `状态源已 ${min} 分钟没有写入（任务可能已无输出地卡住，或所属进程已死但状态源尚未清理）`,
     stalledTip: (last: string) => last ? `超过 120 秒无输出（上次输出 ${last} 前），进程仍存活；长时间工具调用可能误报` : '超过 120 秒无输出，进程仍存活；长时间工具调用可能误报',
-    cwdTip: '工作目录',
     col: { id: '任务', source: '来源', tier: '档位', status: '状态', progress: '进度', tokens: 'tokens ⇅', task: '内容' },
     working: '处理中…',
     tips: {
@@ -149,6 +161,16 @@ const COPY = {
         install: '把 ds-flash / ds-pro 角色和 /dsh-config、/dsh-status 命令复制到 ~/.codex/（MCP 路径按本机自动渲染，含 approve 审批与超时配置）',
         update: '重新渲染并覆盖角色文件与命令（插件路径或配置变更后用）；原文件先备份',
         restore: '删除 ~/.codex/ 下的 ds-flash / ds-pro 角色与 dsh 命令文件（角色文件先备份）',
+      },
+      agy: {
+        install: '把 dsh-crew MCP server 注册进 ~/.gemini/config/mcp_config.json，并将 ds-flash / ds-pro 代理与 dsh-config / dsh-status skills 复制到 ~/.gemini/config/agents 与 skills（修改前自动备份）',
+        update: '重新覆盖 MCP 配置、代理与 skills（插件路径或配置变更后用）；原文件先备份',
+        restore: '从 ~/.gemini/config 移除 dsh-crew 的 mcp_config.json 条目、ds-flash / ds-pro 代理与 dsh-config / dsh-status skills（修改前备份）',
+      },
+      grok: {
+        install: '把 dsh-crew MCP server 段写入 ~/.grok/config.toml，并将 ds-flash / ds-pro 代理与 dsh-config / dsh-status 命令复制到 ~/.grok/agents 与 commands（修改前自动备份）。提示：grok 出于安全设计，在未信任的项目目录里不会启动仓库级 MCP server —— 全局安装不受影响，但在未信任目录里用 grok mcp doctor 检查时会看到 "folder untrusted"，换个目录或加 --trust 即可。',
+        update: '重新覆盖 config.toml 的 MCP 段、代理与命令（插件路径或配置变更后用）；原文件先备份',
+        restore: '从 ~/.grok 移除 dsh-crew 的 config.toml 段、ds-flash / ds-pro 代理与 dsh-config / dsh-status 命令（修改前备份）',
       },
     },
   },
@@ -199,12 +221,6 @@ const COPY = {
     cardRuntime: { t: 'Execution & connection', d: 'Whether worker sessions run inside this instance or a separate process, the per-job timeout, and the address CC / Codex probes.' },
     cardMM: { t: 'Vision & image generation', d: "Lends the harness's text-only models eyes and a brush: describe_image, pasted-image transcription and generate_image all use these settings." },
     cardCustomProv: { t: 'Custom providers', d: 'Bring your own API or local command; saved providers appear in the vision / image-gen selects above.' },
-    groupWorkers: 'Worker profiles',
-    cardWorkers: { t: 'Dispatch targets (external CLIs)', d: 'When dsh_run_worker / dsh_spawn_worker receive worker: <name>, dispatch bypasses the tier / mode logic and runs the task through that external CLI. A profile pins backend × model × effort; the list comes from the plugin’s built-in registry.' },
-    workerOptIn: 'These backends are opt-in per call: name one with the worker argument, e.g. worker: "grok". Without it, dispatch goes to DSH\'s own workers.',
-    modelCliDefault: 'CLI default', effortCliDefault: 'CLI default',
-    backendLabel: 'backend', modelLabel: 'model', effortLabel: 'effort', permissionLabel: 'permission',
-    permBadge: { agy: 'full approval · no restricted mode', grok: 'always-approve · deny rules still apply' },
     modeDesc: { auto: 'auto · prefer hub', hub: 'hub · require hub', standalone: 'standalone' },
     save: 'Save', saved: 'Saved', jobs: 'Worker jobs', empty: 'No worker jobs yet.',
     statusRunning: 'running', statusStalled: 'stalled', statusDone: 'done', statusFailed: 'failed', statusCancelled: 'cancelled', statusOrphaned: 'orphaned',
@@ -212,11 +228,18 @@ const COPY = {
     orphanWriterGone: (origin: string) => `Owning instance gone: the process that wrote this status (${origin}) no longer exists — the job died with it (last status: running)`,
     orphanVanished: (ago: string) => `Vanished from the status feed while running (last seen ${ago} ago). Likely died with its owning instance; if it actually finished between refreshes, dismiss it with ×`,
     orphanDismiss: 'Dismiss this orphaned record',
-    heldCwds: 'Held workspaces', heldCwdsHint: 'Derived from running jobs: a second dispatch to one of these cwds is refused by the cwd lock — these are the holders (job / backend / start time) named in that error.',
-    heldBy: 'holder', finishedJobs: 'Finished',
+    procAliveBadge: 'process still alive',
+    procKill: 'Kill',
+    procKilling: 'killing…',
+    procKillDone: 'Termination signal sent to the orphaned process',
+    procKillAlreadyGone: 'The process is already gone (it may have exited on its own)',
+    procAliveBadgeTip: (pid: number) => `The job lost contact with the board, but its worker process is still running (pid ${pid}) - most likely an orphan left behind after its dispatching host died`,
+    procKillTip: (pid: number) => `Kill pid ${pid}: the command line is read and verified first (DSH runtime / agy / grok), then SIGTERM, and SIGKILL if it survives ~3s`,
+    finishedJobs: 'Finished',
+    noCwdGroup: '(no workspace)',
+    lockBadgeTip: (h: any) => `"${h?.cwd ?? 'this workspace'}" is held by a running job (job ${h?.jobId} · backend ${h?.backend} · started ${h?.startedAt}): a second dispatch to this cwd is refused unless allow_concurrent_cwd: true is passed.`,
     shardStale: (min: number) => `status feed has not been written for ${min} min (job may be stuck with no output, or its process died but the feed was not cleaned up yet)`,
     stalledTip: (last: string) => last ? `No output for 120s (last output ${last} ago); the process is still alive — long tool runs can false-positive` : 'No output for 120s; the process is still alive — long tool runs can false-positive',
-    cwdTip: 'working directory',
     col: { id: 'job', source: 'source', tier: 'tier', status: 'status', progress: 'progress', tokens: 'tokens ⇅', task: 'task' },
     working: 'Working…',
     tips: {
@@ -229,6 +252,16 @@ const COPY = {
         install: 'Copy ds-flash / ds-pro roles and /dsh-config, /dsh-status prompts into ~/.codex/ (MCP paths rendered for this machine, approve mode + timeout included)',
         update: 'Re-render and overwrite role files and prompts (after path/config changes); originals backed up',
         restore: 'Delete ds-flash / ds-pro roles and dsh prompts from ~/.codex/ (roles backed up first)',
+      },
+      agy: {
+        install: 'Register the dsh-crew MCP server in ~/.gemini/config/mcp_config.json and copy ds-flash / ds-pro agents plus dsh-config / dsh-status skills into ~/.gemini/config/agents and skills (backed up first)',
+        update: 'Re-write the MCP entry, agents and skills (after path/config changes); originals backed up',
+        restore: 'Remove the dsh-crew mcp_config.json entry, ds-flash / ds-pro agents and dsh-config / dsh-status skills from ~/.gemini/config (backed up first)',
+      },
+      grok: {
+        install: 'Write the dsh-crew MCP server section into ~/.grok/config.toml and copy ds-flash / ds-pro agents plus dsh-config / dsh-status commands into ~/.grok/agents and commands (backed up first). Note: by security design grok does not start repo-level MCP servers in untrusted project directories — a global install is unaffected, but grok mcp doctor reports "folder untrusted" in an untrusted directory; change directory or pass --trust.',
+        update: 'Re-write the config.toml MCP section, agents and commands (after path/config changes); originals backed up',
+        restore: 'Remove the dsh-crew config.toml section, ds-flash / ds-pro agents and dsh-config / dsh-status commands from ~/.grok (backed up first)',
       },
     },
   },
@@ -344,6 +377,14 @@ function WorkersPanel({ ctx }: { ctx: any }) {
 
   const [jobs, setJobs] = useState<any[]>([]); // live snapshot from /jobs
   const [ghosts, setGhosts] = useState<Record<string, any>>(() => readGhosts());
+
+  // WPC14: proc-alive probe results for pid-carrying ghost tombstones, keyed
+  // by job id. alive: null = probe failed / hub unreachable - it must never
+  // render as a dead process, so only an affirmative probe shows the badge.
+  const [procProbe, setProcProbe] = useState<Record<string, { at: number; alive: boolean | null }>>({});
+  const procProbeAt = useRef<Record<string, number>>({}); // throttle: last attempt per ghost id
+  const [killing, setKilling] = useState<Record<string, boolean>>({});
+
   const [jobsLoaded, setJobsLoaded] = useState(false); // first OK snapshot arrived
   const [hoverTask, setHoverTask] = useState<{ id: string; text: string; right: number; top: number; bottom: number; flip: boolean } | null>(null);
   const [status, setStatus] = useState<any>(null);
@@ -361,7 +402,6 @@ function WorkersPanel({ ctx }: { ctx: any }) {
   const [testResult, setTestResult] = useState<{ key: string; ok?: boolean; steps?: any[]; error?: string; busy: boolean } | null>(null);
   const [integrationsCollapsed, toggleIntegrations] = useCollapseSection('integrations');
   const [globalConfigCollapsed, toggleGlobalConfig] = useCollapseSection('global-config');
-  const [finishedCollapsed, toggleFinished] = useCollapseSection('finished-jobs');
   // Deliberately no default dispatch-target select here: CLI backends stay
   // opt-in per call via the worker argument (see the read-only workerOptIn
   // card below). Re-adding a default would silently re-route every
@@ -403,6 +443,58 @@ function WorkersPanel({ ctx }: { ctx: any }) {
   const dismissGhost = useCallback((id: string) => {
     setGhosts((g) => { const n = { ...g }; delete n[id]; return n; });
   }, []);
+  const probeOne = useCallback(async (id: string, pid: number) => {
+    let alive: boolean | null = null;
+    try {
+      const res = await fetch(withLang(`/proc-alive?pid=${pid}`), { cache: 'no-store' });
+      const body = await res.json().catch(() => null);
+      alive = res.ok && body?.ok !== false && typeof body?.alive === 'boolean' ? body.alive : null;
+    } catch { alive = null; } // hub unreachable / restarting: hide the badge
+    setProcProbe((s) => ({ ...s, [id]: { at: Date.now(), alive } }));
+  }, [withLang]);
+
+  // Batch probe of pid-carrying ghost tombstones, throttled per ghost id
+  // (dueProcProbes) so the 3s refresh loop never turns into a probe storm.
+  useEffect(() => {
+    const run = () => {
+      const targets = dueProcProbes(ghosts, procProbeAt.current, Date.now());
+      for (const t of targets) procProbeAt.current[t.id] = Date.now();
+      if (targets.length > 0) void Promise.all(targets.map((t) => probeOne(t.id, t.pid)));
+    };
+    run();
+    const timer = setInterval(run, 5000);
+    return () => clearInterval(timer);
+  }, [ghosts, probeOne]);
+
+  const killGhostProc = useCallback(async (id: string) => {
+    const g = ghosts[id];
+    const p = g?.job ? ghostPidOf(g.job) : null;
+    if (!p) return;
+    setKilling((s) => ({ ...s, [id]: true }));
+    try {
+      const res = await fetch(withLang('/proc-kill'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pid: p.pid, ...(p.pgid === null ? {} : { pgid: p.pgid }), lang: locale === 'zh' ? 'zh' : 'en' }),
+      });
+      const body = await res.json().catch(() => null);
+      if (res.ok && body?.ok !== false && typeof body?.signal === 'string') {
+        setNotice(body.alreadyGone ? copy.procKillAlreadyGone : copy.procKillDone);
+        // Server confirmed the kill: drop the badge immediately, then re-probe
+        // so the row shows the real state (refusal paths keep the badge).
+        setProcProbe((s) => ({ ...s, [id]: { at: Date.now(), alive: false } }));
+        void probeOne(id, p.pid);
+      } else {
+        setNotice(String(body?.error ?? `HTTP ${res.status}`));
+        setProcProbe((s) => ({ ...s, [id]: { at: Date.now(), alive: true } }));
+      }
+    } catch (e: any) {
+      setNotice(String(e?.message ?? e));
+    } finally {
+      setKilling((s) => ({ ...s, [id]: false }));
+    }
+  }, [ghosts, withLang, probeOne, copy, locale]);
+
 
   const refreshAll = useCallback(async () => {
     try {
@@ -599,16 +691,16 @@ function WorkersPanel({ ctx }: { ctx: any }) {
     </div>
   );
 
-  // --- jobs board (WPC10) ---------------------------------------------------
+  // --- jobs board (WPC10; workspace groups + lock badges: WPC13) ------------
   const rows = jobsLoaded ? displayJobs(jobs, ghosts) : [];
-  const activeRows = rows.filter((j) => j.status === 'running' || j.status === 'orphaned');
-  const finishedRows = rows.filter((j) => j.status !== 'running' && j.status !== 'orphaned');
-  const held = heldWorkspaces(rows);
+  const groups = groupJobs(rows);
+  const locks = workspaceLocks(rows);
   /** One job row: status (with orphan/stall labeling), progress, tokens and a
-   * two-line task cell (task text + cwd / mode / origin-chain meta). */
+   * single-line task cell (WPC13). */
   const renderJobRow = (job: any) => {
     const ghostRow = !!ghosts[job.id] && !jobs.some((l) => l?.id === job.id);
     const info = statusInfoOf(job, copy);
+    const pb = procBadgeOf(job, procProbe[job.id]);
     return (
       <tr key={job.id} style={job.status === 'orphaned' ? { background: 'rgba(240,136,62,0.05)' } : undefined}>
         <td style={{ ...S.tight, ...S.mono }} title={job.origin ? `${job.id} · ${job.origin}` : job.id}>{String(job.id).replace(/-[a-z0-9]+$/, '')}</td>
@@ -642,25 +734,22 @@ function WorkersPanel({ ctx }: { ctx: any }) {
           }}
           onMouseLeave={() => setHoverTask(null)}
         >
-          <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.45, fontSize: 12.5 }}>
-            {job.task}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 6px', marginTop: 2, minWidth: 0 }}>
-            {job.cwd && (
-              <span title={`${copy.cwdTip}: ${job.cwd}`} style={{ ...S.mono, fontSize: 10.5, opacity: 0.75, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150, flexShrink: 1 }}>{shortPath(job.cwd)}</span>
-            )}
-            {(job.mode === 'hub' || job.mode === 'standalone') && (
-              <span style={{ fontSize: 10.5, padding: '0 5px', borderRadius: 4, border: '1px solid rgba(128,128,128,0.35)', opacity: 0.75, fontFamily: S.mono.fontFamily }}>{job.mode}</span>
-            )}
-            {Array.isArray(job.origin_chain) && job.origin_chain.length > 1 && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }} title={chainText(job.origin_chain)}>
-                {job.origin_chain.map((h: any, i: number) => (
-                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                    {i > 0 && <span style={{ opacity: 0.45, fontSize: 10.5 }}>→</span>}
-                    <span style={{ fontFamily: S.mono.fontFamily, fontSize: 10.5, padding: '0 5px', borderRadius: 4, border: '1px solid rgba(210,153,34,0.55)', color: '#d29922', whiteSpace: 'nowrap' }}>{sourceLabel(h?.source)}·{h?.backend ?? '?'}</span>
-                  </span>
-                ))}
-              </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <div style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.45, fontSize: 12.5 }}>
+              {job.task}
+            </div>
+            {pb && (
+              <>
+                <span title={copy.procAliveBadgeTip(pb.pid)}
+                  style={{ flexShrink: 0, fontSize: 11, color: '#f0883e', whiteSpace: 'nowrap', padding: '0 7px', borderRadius: 99, border: '1px solid rgba(240,136,62,0.55)' }}>
+                  {copy.procAliveBadge}
+                </span>
+                <button type="button" disabled={!!killing[job.id]} title={copy.procKillTip(pb.pid)}
+                  style={{ flexShrink: 0, fontSize: 11, padding: '0 8px', borderRadius: 99, border: '1px solid rgba(240,136,62,0.65)', background: 'transparent', color: '#f0883e', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  onClick={(e: any) => { e.stopPropagation(); void killGhostProc(job.id); }}>
+                  {killing[job.id] ? copy.procKilling : copy.procKill}
+                </button>
+              </>
             )}
           </div>
         </td>
@@ -680,6 +769,8 @@ function WorkersPanel({ ctx }: { ctx: any }) {
             status?.claude?.installed ? <span style={S.chip(!!status?.claude?.hud)}>{copy.hud}</span> : null,
             'claude', 'claude-uninstall', (copy as any).tips.claude)}
           {integrationRow('Codex', !!status?.codex?.installed, null, 'codex', 'codex-uninstall', (copy as any).tips.codex)}
+          {integrationRow('Antigravity', !!status?.agy?.installed, null, 'agy', 'agy-uninstall', (copy as any).tips.agy)}
+          {integrationRow('Grok', !!status?.grok?.installed, null, 'grok', 'grok-uninstall', (copy as any).tips.grok)}
         </div>
       )}
 
@@ -706,36 +797,6 @@ function WorkersPanel({ ctx }: { ctx: any }) {
             <CustomSelect value={config.preset_pro ?? 'default'} onChange={(v) => field('preset_pro', v)} options={presetOptions} /></label>
         </>))}
 
-        {WORKER_PROFILE_LIST.length > 0 && (<>
-        <div style={S.group}>{copy.groupWorkers}</div>
-        {block(copy.cardWorkers, (<>
-          {/* Deliberately read-only. A default dispatch target would silently
-              re-route every unqualified call to a CLI backend — a second,
-              invisible delegation mechanism competing with the harness's own
-              subagent providers. Backends stay opt-in per call, via the
-              `worker` argument, so what runs is always what the caller named. */}
-          <div style={{ fontSize: 11.5, opacity: 0.75, lineHeight: 1.5 }}>{copy.workerOptIn}</div>
-          {WORKER_PROFILE_LIST.map((p: any) => (
-            <div key={p.name} style={{ border: '1px solid rgba(128,128,128,0.16)', borderRadius: 8, padding: '9px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ ...S.mono, fontWeight: 600 }}>{p.name}</span>
-                <span style={{ ...S.chip(false), fontFamily: S.mono.fontFamily, opacity: 0.8 }}>{p.backend}</span>
-                <span style={{ flex: 1 }} />
-                <span title={p.permission} style={{ fontSize: 11.5, padding: '1px 8px', borderRadius: 99, border: '1px solid rgba(210,153,34,0.5)', color: '#d29922' }}>
-                  {copy.permBadge[p.name] ?? p.permission}</span>
-              </div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>{p.label}</div>
-              <div style={{ fontSize: 12, display: 'flex', flexWrap: 'wrap', gap: '4px 18px' }}>
-                <span><span style={{ opacity: 0.55 }}>{copy.modelLabel} </span><span style={S.mono}>{p.model ?? copy.modelCliDefault}</span></span>
-                <span><span style={{ opacity: 0.55 }}>{copy.effortLabel} </span><span style={S.mono}>{p.effort ?? copy.effortCliDefault}</span></span>
-              </div>
-              <div style={{ fontSize: 11.5, opacity: 0.62, lineHeight: 1.5 }}>
-                <span style={{ opacity: 0.8 }}>{copy.permissionLabel}: </span>{p.permission}
-              </div>
-            </div>
-          ))}
-        </>), false)}
-        </>)}
 
         <div style={S.group}>{copy.groupRuntime}</div>
         {block(copy.cardRuntime, (<>
@@ -913,62 +974,28 @@ function WorkersPanel({ ctx }: { ctx: any }) {
       {notice !== '' && <div style={{ fontSize: 12, opacity: 0.8, whiteSpace: 'pre-wrap' }}>{notice}</div>}
 
       <div style={S.section}>{copy.jobs}</div>
-      {!jobsLoaded || rows.length === 0 ? (
+      {!jobsLoaded || groups.length === 0 ? (
         <div style={{ opacity: 0.55 }}>{copy.empty}</div>
       ) : (
-        <>
-          {held.length > 0 && (<>
-            <div style={S.group}>{copy.heldCwds}（{held.length}）</div>
-            <div style={{ border: '1px solid rgba(128,128,128,0.16)', borderRadius: 8, padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {held.map(({ cwd, jobs: holders }) => (
-                <div key={cwd} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
-                  <span title={cwd} style={{ ...S.mono, fontSize: 11.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 240, flexShrink: 1 }}>{shortPath(cwd)}</span>
-                  {holders.length > 1 && <span style={{ fontSize: 10.5, opacity: 0.6 }}>×{holders.length}</span>}
-                  <span style={{ flex: 1 }} />
-                  {holders.map((j: any) => (
-                    <span key={j.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5 }} title={j.id}>
-                      <span style={{ ...S.chip(false), opacity: 0.9 }}>{sourceLabel(j.source)}</span>
-                      <span style={{ ...S.chip(false), fontFamily: S.mono.fontFamily, opacity: 0.9 }}>{j.backend ?? j.mode}</span>
-                      <span style={S.mono}>{String(j.id).replace(/-[a-z0-9]+$/, '')}</span>
-                      <span style={{ opacity: 0.6 }}>{copy.heldBy} {elapsed(j.startedAt)}</span>
-                    </span>
-                  ))}
-                </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed', minWidth: 800 }}>
+            <colgroup>
+              <col style={{ width: 64 }} /><col style={{ width: 58 }} /><col style={{ width: 72 }} />
+              <col style={{ width: 84 }} /><col style={{ width: 100 }} /><col style={{ width: 84 }} />
+              <col style={{ width: 338 }} />
+            </colgroup>
+            <thead><tr>
+              {[copy.col.id, copy.col.source, copy.col.tier, copy.col.status, copy.col.progress, copy.col.tokens, copy.col.task].map((h) => (
+                <th key={h} style={{ ...S.tight, fontSize: 11, opacity: 0.55, fontWeight: 500 }}>{h}</th>
               ))}
-              <div style={{ fontSize: 10.5, opacity: 0.5, marginTop: 1 }}>{copy.heldCwdsHint}</div>
-            </div>
-          </>)}
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed', minWidth: 800 }}>
-              <colgroup>
-                <col style={{ width: 64 }} /><col style={{ width: 58 }} /><col style={{ width: 72 }} />
-                <col style={{ width: 84 }} /><col style={{ width: 100 }} /><col style={{ width: 84 }} />
-                <col style={{ width: 338 }} />
-              </colgroup>
-              <thead><tr>
-                {[copy.col.id, copy.col.source, copy.col.tier, copy.col.status, copy.col.progress, copy.col.tokens, copy.col.task].map((h) => (
-                  <th key={h} style={{ ...S.tight, fontSize: 11, opacity: 0.55, fontWeight: 500 }}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {activeRows.map((job) => renderJobRow(job))}
-                {finishedRows.length > 0 && (
-                  <tr>
-                    <td colSpan={7} role="button" tabIndex={0} aria-expanded={!finishedCollapsed}
-                      title={finishedCollapsed ? copy.expand : copy.collapse}
-                      onClick={toggleFinished}
-                      onKeyDown={(e: any) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFinished(); } }}
-                      style={{ ...S.tight, fontSize: 11.5, opacity: 0.75, cursor: 'pointer', padding: '7px 10px 7px 0', userSelect: 'none' as const }}>
-                      <span aria-hidden="true" style={{ fontSize: 11, width: 12, display: 'inline-block', textAlign: 'center' as const }}>{finishedCollapsed ? '▸' : '▾'}</span>
-                      {copy.finishedJobs}（{finishedRows.length}）
-                    </td>
-                  </tr>
-                )}
-                {!finishedCollapsed && finishedRows.map((job) => renderJobRow(job))}
-              </tbody>
-            </table>
-          </div>
-        </>
+            </tr></thead>
+            <tbody>
+              {groups.map((group) => (
+                <WorkspaceGroup key={workspaceKey(group.cwd)} group={group} locks={locks} copy={copy} renderRow={renderJobRow} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {hoverTask && createPortal(
         <div style={{
@@ -985,6 +1012,71 @@ function WorkersPanel({ ctx }: { ctx: any }) {
       )}
     </div>
   );
+}
+
+/**
+ * One workspace group on the jobs board (WPC13): a header row — directory
+ * basename (bold), abbreviated full path, job count and an optional lock
+ * badge (🔒 backend · 7m42s) whose tooltip carries the old held-workspaces
+ * explanation — followed by that workspace's rows, with settled jobs tucked
+ * behind a per-group "Finished (n)" fold. Group and fold collapse states are
+ * remembered per workspace in localStorage.
+ */
+function WorkspaceGroup({ group, locks, copy, renderRow }: {
+  group: { cwd: string | null; jobs: any[] };
+  locks: Array<{ cwd: string; holder: any }>;
+  copy: any;
+  renderRow: (job: any) => any;
+}) {
+  const wsKey = workspaceKey(group.cwd);
+  const [collapsed, toggle] = useWorkspaceCollapse(wsKey);
+  // Settled rows start folded away; the choice is remembered per workspace.
+  const [finishedCollapsed, toggleFinished] = useCollapseSection(`finished-jobs.${wsKey}`, true);
+  const active = group.jobs.filter((j) => j.status === 'running' || j.status === 'orphaned');
+  const finished = group.jobs.filter((j) => j.status !== 'running' && j.status !== 'orphaned');
+  const badge = lockBadgeOf(locks, group.cwd, copy);
+  return (<>
+    <tr>
+      <td colSpan={7} role="button" tabIndex={0} aria-expanded={!collapsed}
+        title={collapsed ? copy.expand : copy.collapse}
+        onClick={toggle}
+        onKeyDown={(e: any) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
+        style={{ ...S.tight, cursor: 'pointer', userSelect: 'none' as const, padding: '7px 10px 7px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span aria-hidden="true" style={{ fontSize: 11, width: 12, flexShrink: 0, textAlign: 'center' as const, opacity: 0.85 }}>{collapsed ? '▸' : '▾'}</span>
+          <span style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{group.cwd === null ? copy.noCwdGroup : basenameOf(group.cwd)}</span>
+          {group.cwd !== null && (
+            <span title={group.cwd} style={{ ...S.mono, fontSize: 11, opacity: 0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>{abbrevPath(group.cwd)}</span>
+          )}
+          <span style={{ fontSize: 11, opacity: 0.65 }}>（{group.jobs.length}）</span>
+          <span style={{ flex: 1 }} />
+          {badge && (
+            <span title={badge.title}
+              onClick={(e: any) => e.stopPropagation()}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, padding: '1px 8px', borderRadius: 99, border: '1px solid rgba(210,153,34,0.5)', color: '#d29922', whiteSpace: 'nowrap', cursor: 'default' }}>
+              {badge.text}
+            </span>
+          )}
+        </div>
+      </td>
+    </tr>
+    {!collapsed && (<>
+      {active.map(renderRow)}
+      {finished.length > 0 && (
+        <tr>
+          <td colSpan={7} role="button" tabIndex={0} aria-expanded={!finishedCollapsed}
+            title={finishedCollapsed ? copy.expand : copy.collapse}
+            onClick={toggleFinished}
+            onKeyDown={(e: any) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFinished(); } }}
+            style={{ ...S.tight, fontSize: 11.5, opacity: 0.75, cursor: 'pointer', padding: '7px 10px 7px 0', userSelect: 'none' as const }}>
+            <span aria-hidden="true" style={{ fontSize: 11, width: 12, display: 'inline-block', textAlign: 'center' as const }}>{finishedCollapsed ? '▸' : '▾'}</span>
+            {copy.finishedJobs}（{finished.length}）
+          </td>
+        </tr>
+      )}
+      {finished.length > 0 && !finishedCollapsed && finished.map(renderRow)}
+    </>)}
+  </>);
 }
 
 export function apply(ctx: any): void {

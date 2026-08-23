@@ -1,7 +1,12 @@
 // WPC10 client-logic verification: bundles src/client/jobs-view.ts with
 // esbuild and exercises the pure view helpers — orphan-ghost reconciliation
 // (vanished + writer-gone), running-first ordering, held-workspace grouping,
-// path/chain rendering and status-cell labeling. No browser needed.
+// path/chain rendering and status-cell labeling. WPC13 additions on top:
+// workspace grouping (multi-cwd, no-cwd bucket, running-first within a
+// group), per-group finished counts, lock-badge derivation (kind:"cwd-lock"
+// entries + running-job fallback) and the group-header path helpers
+// (basename, ~-substitution + middle ellipsis, stable storage key).
+// No browser needed.
 //
 //   node scripts/verify-wpc10-client.mjs
 
@@ -28,6 +33,8 @@ try {
   const mod = await import(pathToFileURL(join(tmp, 'jobs-view.mjs')).href);
   const {
     reconcileGhosts, displayJobs, heldWorkspaces, shortPath, chainText, statusInfoOf,
+    groupJobs, finishedCountOf, workspaceKey, basenameOf, abbrevPath, workspaceLocks, lockBadgeOf,
+    ghostPidOf, procBadgeOf, dueProcProbes, PROC_PROBE_INTERVAL_MS,
     ORPHAN_MISSES, GHOST_CAP,
   } = mod;
 
@@ -120,6 +127,107 @@ try {
   const many = Array.from({ length: GHOST_CAP + 5 }, (_, i) => job({ id: `job-${i}-y` }));
   gc = reconcileGhosts(many, gc, now);
   check('ghost registry stays capped', Object.keys(gc).length <= GHOST_CAP);
+  // 10. WPC13 workspace grouping: multi-cwd groups, no-cwd bucket, ordering.
+  const gj = groupJobs([
+    job({ cwd: '/w/z' }), job({ cwd: '/w/a' }),
+    job({ cwd: '/w/z', id: 'job-2-y', startedAt: new Date(now - 2000).toISOString() }),
+    job({ cwd: undefined, id: 'job-n1' }),
+    job({ cwd: '', id: 'job-n2', status: 'done' }),
+  ]);
+  check('groupJobs splits rows into per-cwd groups sorted by path',
+    gj.length === 3 && gj[0].cwd === '/w/a' && gj[0].jobs.length === 1
+    && gj[1].cwd === '/w/z' && gj[1].jobs.length === 2);
+  check('running rows precede finished rows inside a group',
+    gj[1].jobs[0].status === 'running' && gj[1].jobs[1].status === 'running');
+  check('jobs without a cwd land in the trailing null-cwd group',
+    gj[2].cwd === null && gj[2].jobs.map((j) => j.id).join(',') === 'job-n1,job-n2');
+  check('finishedCountOf counts only settled rows',
+    finishedCountOf(gj[1].jobs) === 0 && finishedCountOf(gj[2].jobs) === 1);
+
+  // 11. WPC13 grouping skips non-job status rows (kind: "cwd-lock").
+  const mixedGroup = groupJobs([job({ cwd: '/w/x' }), { kind: 'cwd-lock', id: 'cwd-lock-1', cwd: '/w/l', holder: {} }]);
+  check('groupJobs skips kind:"cwd-lock" feed entries',
+    mixedGroup.length === 1 && mixedGroup[0].cwd === '/w/x' && mixedGroup[0].jobs.length === 1);
+
+  // 12. Orphaned ghosts stay visible in their workspace group.
+  const ghostGroup = groupJobs(displayJobs([], {
+    'job-1-x': { job: job({ status: 'orphaned', orphan: { kind: 'vanished', lastSeenAt: now }, cwd: '/w/g' }), lastSeenAt: now, misses: 2 },
+  }));
+  check('orphaned ghosts stay in their workspace group',
+    ghostGroup.length === 1 && ghostGroup[0].cwd === '/w/g' && ghostGroup[0].jobs[0].id === 'job-1-x');
+
+  // 13. WPC13 lock view: kind:"cwd-lock" entries and the running-job fallback.
+  const lockRow = { kind: 'cwd-lock', id: 'cwd-lock-1', cwd: '/w/l', holder: { jobId: 'hub-1', backend: 'hub-1', mode: 'hub', startedAt: new Date(now - 462_000).toISOString(), cwd: '/w/l' } };
+  const wl = workspaceLocks([lockRow, job({ cwd: '/w/l' }), job({ cwd: '/w/q', status: 'done' }), orph]);
+  check('workspaceLocks reads kind:"cwd-lock" entries with their holder',
+    wl.some((l) => l.cwd === '/w/l' && l.holder.jobId === 'hub-1' && l.holder.backend === 'hub-1'));
+  check('workspaceLocks falls back to running jobs and ignores settled rows',
+    wl.some((l) => l.cwd === '/w/l' && l.holder.jobId === 'job-1-x') && !wl.some((l) => l.cwd === '/w/q'));
+
+  // 14. WPC13 badge derivation: backend + age from startedAt, null when free.
+  const badgeCopy = { lockBadgeTip: (h) => 'tip:' + h.jobId + ':' + h.backend };
+  const badge = lockBadgeOf(wl, '/w/l', badgeCopy, now);
+  check('lock badge shows backend and age from startedAt',
+    badge !== null && badge.text === '🔒 hub-1 · 7m42s' && badge.title === 'tip:hub-1:hub-1');
+  check('no badge for a free workspace or the no-cwd group',
+    lockBadgeOf(wl, '/w/free', badgeCopy, now) === null && lockBadgeOf(wl, null, badgeCopy, now) === null);
+
+  // 15. WPC13 group-header path helpers.
+  check('basenameOf strips trailing slashes and handles null/root',
+    basenameOf('/w/a/repo') === 'repo' && basenameOf('/w/a/repo/') === 'repo'
+    && basenameOf(null) === '' && basenameOf('/') === '/');
+  check('abbrevPath swaps $HOME for ~',
+    abbrevPath('/home/fini/workspace/dsh-plugins/dsh-crew', '/home/fini') === '~/workspace/dsh-plugins/dsh-crew');
+  const longAp = abbrevPath('/a/very/long/path/that/keeps/going/way/past/the/limit/repo');
+  check('abbrevPath middle-ellipsizes while keeping head and tail',
+    longAp.startsWith('/a/very') && longAp.endsWith('repo') && longAp.includes('…') && longAp.length <= 44);
+  check('abbrevPath leaves short paths alone', abbrevPath('/w/a') === '/w/a');
+  check('workspaceKey is stable, distinct and storage-safe',
+    workspaceKey('/w/a') === workspaceKey('/w/a') && workspaceKey('/w/a') !== workspaceKey('/w/b')
+    && !workspaceKey('/w/a/b').includes('/') && workspaceKey(null) === workspaceKey('')
+    && workspaceKey(null) !== workspaceKey('/w/a'));
+
+  // 16. WPC14 ghost pid extraction: only valid positive-integer pairs count.
+  check('ghostPidOf reads a pid and defaults pgid to null',
+    ghostPidOf(job({ pid: 4242 }))?.pid === 4242 && ghostPidOf(job({ pid: 4242 }))?.pgid === null);
+  check('ghostPidOf reads a pid+pgid pair',
+    JSON.stringify(ghostPidOf(job({ pid: 4242, pgid: 4242 }))) === JSON.stringify({ pid: 4242, pgid: 4242 }));
+  check('ghostPidOf rejects missing/zero/negative/non-integer pid',
+    ghostPidOf(job()) === null && ghostPidOf(job({ pid: 0 })) === null
+    && ghostPidOf(job({ pid: -5 })) === null && ghostPidOf(job({ pid: 4.5 })) === null
+    && ghostPidOf(job({ pid: '42' })) === null);
+  check('ghostPidOf rejects an invalid pgid',
+    ghostPidOf(job({ pid: 4242, pgid: -1 })) === null && ghostPidOf(job({ pid: 4242, pgid: 'x' })) === null);
+
+  // 17. WPC14 badge derivation: only an affirmative probe on an orphaned
+  //     pid-carrying tombstone shows the badge + kill button.
+  const ghostPidJob = job({ status: 'orphaned', pid: 4242, pgid: 4242, orphan: { kind: 'vanished', lastSeenAt: now } });
+  check('alive probe shows the badge with pid+pgid',
+    JSON.stringify(procBadgeOf(ghostPidJob, { alive: true })) === JSON.stringify({ pid: 4242, pgid: 4242 }));
+  check('failed probe (alive: null) hides the badge', procBadgeOf(ghostPidJob, { alive: null }) === null);
+  check('no probe yet hides the badge', procBadgeOf(ghostPidJob, null) === null);
+  check('dead-process probe hides the badge', procBadgeOf(ghostPidJob, { alive: false }) === null);
+  check('badge needs a pid on the tombstone', procBadgeOf(job({ status: 'orphaned' }), { alive: true }) === null);
+  check('badge only applies to orphaned rows', procBadgeOf(job({ pid: 4242, status: 'running' }), { alive: true }) === null);
+
+  // 18. WPC14 probe scheduling: pid-carrying orphans only, throttled per ghost id.
+  const ghostWithPid = { g1: { job: ghostPidJob, lastSeenAt: now, misses: 2 } };
+  const noPidGhost = { g2: { job: job({ status: 'orphaned' }), lastSeenAt: now, misses: 2 } };
+  const runningGhost = { g3: { job: job({ pid: 9 }), lastSeenAt: now, misses: 0 } };
+  const due = dueProcProbes({ ...ghostWithPid, ...noPidGhost, ...runningGhost }, {}, now);
+  check('dueProcProbes picks pid-carrying orphaned ghosts only',
+    due.length === 1 && due[0].id === 'g1' && due[0].pid === 4242 && due[0].pgid === 4242);
+  check('recently probed ghosts are throttled',
+    dueProcProbes(ghostWithPid, { g1: now - PROC_PROBE_INTERVAL_MS + 1000 }, now).length === 0);
+  check('an old probe attempt makes the ghost due again',
+    dueProcProbes(ghostWithPid, { g1: now - PROC_PROBE_INTERVAL_MS - 1000 }, now).length === 1);
+
+  // 19. WPC14 tombstones keep the recorded pid through the vanish sequence.
+  let gp = reconcileGhosts([job({ pid: 4242 })], {}, now);
+  gp = reconcileGhosts([], gp, now + 3000);
+  gp = reconcileGhosts([], gp, now + 6000);
+  check('orphaned tombstone keeps the recorded pid',
+    gp['job-1-x']?.job?.pid === 4242 && gp['job-1-x']?.job?.status === 'orphaned');
 
   console.log('  (ORPHAN_MISSES = ' + ORPHAN_MISSES + ', GHOST_CAP = ' + GHOST_CAP + ')');
   if (failures > 0) { console.error('\nWPC10 CLIENT CHECKS FAILED: ' + failures); process.exit(1); }
