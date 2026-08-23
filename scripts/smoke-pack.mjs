@@ -255,6 +255,20 @@ if (srcInfo.version !== libInfo.version) {
 if (srcInfo.version !== installedPkg.version) {
   fail('version mismatch: servers report ' + srcInfo.version + ' but package.json says ' + installedPkg.version);
 }
+// The plugin manifest is the version the host displays, and nothing else
+// checks it: 0.1.0-rc.5 shipped with package.json at rc.5 and this file still
+// at rc.4 because a release bumped one place and not the other.
+const manifestPath = join(installDir, 'node_modules', PKG_NAME, '.claude-plugin', 'plugin.json');
+let manifestVersion;
+try {
+  manifestVersion = JSON.parse(readFileSync(manifestPath, 'utf8')).version;
+} catch (err) {
+  fail('cannot read .claude-plugin/plugin.json from the installed copy: ' + err.message);
+}
+if (manifestVersion !== installedPkg.version) {
+  fail('version mismatch: .claude-plugin/plugin.json says ' + manifestVersion + ' but package.json says ' + installedPkg.version);
+}
+console.log('[smoke:pack] version guard OK: package.json, plugin.json, src/server.mjs and lib/server.mjs all report ' + installedPkg.version);
 
 cleanup();
 console.log('\nSMOKE PASSED: the packed tarball installs with plain npm (no ERESOLVE), pulls zero @deepseek-ai/* packages, and both src/server.mjs and lib/server.mjs serve initialize + tools/list with all ' + EXPECTED_TOOLS.length + ' tools.');

@@ -57,6 +57,12 @@ jobs:
       - name: Build and smoke-test the bundle
         run: pnpm run build && pnpm run smoke:mcp
 
+      # smoke:pack installs the packed tarball the way a user would and is the
+      # only check that all four version fields agree. It never ran here, and
+      # 0.1.0-rc.5 shipped with plugin.json and serverInfo a version behind.
+      - name: Smoke-test the packed tarball
+        run: pnpm run smoke:pack
+
       # A prerelease must never take the `latest` dist-tag: `npm install`
       # with no version would hand it to everyone.
       #

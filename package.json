@@ -1,6 +1,6 @@
 {
   "name": "@zseven-w/dsh-crew",
-  "version": "0.1.0-rc.5",
+  "version": "0.1.0-rc.6",
   "type": "module",
   "main": "./src/hub/index.mjs",
   "description": "DeepSeek Harness plugin: dispatch work to DSH agents from Claude Code / Codex, as native subagents with live progress",
