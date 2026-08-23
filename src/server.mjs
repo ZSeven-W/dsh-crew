@@ -12,9 +12,9 @@ import { acquireCwdLock, releaseCwdLockByJobId, updateCwdLockHolder, getCwdLocks
 
 const server = new McpServer({ name: 'dsh-crew', version: '0.1.0-rc.4' });
 
-const tierSchema = z.enum(['flash', 'pro']).optional().describe('Worker model tier: flash = deepseek-v4-flash (simple tasks), pro = deepseek-v4-pro (harder tasks). Omit to use the session default. Ignored when worker= is set.');
+const tierSchema = z.enum(['flash', 'pro']).optional().describe('Worker model tier. flash = mechanical, well-scoped work (single-file edits, lookups, formatting); pro = multi-file changes, debugging, design judgment. Omit to use the session default. Ignored when worker= is set.');
 const effortSchema = z.enum(['off', 'high', 'max']).optional().describe('Reasoning effort for the worker. Omit to use the session default. With worker= it only applies when passed explicitly and the profile supports it (agy maps to low/medium/high).');
-const workerSchema = z.string().optional().describe('Named CLI worker profile (e.g. "agy" or "grok"). When set, dispatch bypasses tier/mode and runs the task through that external coding CLI; the profile pins backend×model×effort. See dsh_worker_config output, worker_profiles field, for the available profiles.');
+const workerSchema = z.string().optional().describe('Named CLI worker profile (e.g. "agy" or "grok"). Explicit opt-in only: set it when the user explicitly asks for that external coding CLI, never as a default. When set, dispatch bypasses tier/mode and runs the task through that CLI; the profile pins backend×model×effort. See dsh_worker_config output, worker_profiles field, for the available profiles.');
 const allowConcurrentCwdSchema = z.boolean().optional().describe('Allow this dispatch even though another running worker already holds the same cwd (workspace) lock. Default false: concurrent writers corrupt a shared repo, so the second dispatch is refused with the holder info instead of queueing. Set true only for read-only tasks.');
 
 // Session-level configuration. This MCP server process lives exactly as long
@@ -136,7 +136,7 @@ async function resolveMode() {
 
 server.registerTool('dsh_run_worker', {
   title: 'Run DSH worker (blocking)',
-  description: 'Delegate a task to a DSH (DeepSeek Harness) coding agent and wait for its final result. The worker is a full DSH agent with its own tools and sandbox. Use tier=flash for simple tasks, tier=pro for harder ones. Blocks until the worker finishes. Dispatches are guarded: worker→worker recursion (origin chain depth/loop) and two workers writing the same cwd at once are refused with readable errors; pass allow_concurrent_cwd: true only for read-only parallel tasks.',
+  description: 'Run one DSH (DeepSeek Harness) coding agent task and block until it finishes. Tier guidance: flash for mechanical, well-scoped work (single-file edits, lookups, formatting); pro for multi-file changes, debugging, and design judgment. The task string must be self-contained: the worker has zero conversation context, so include absolute paths, exact acceptance criteria, and constraints. Set worker="agy" or "grok" only when the user explicitly asks for that CLI, never as a default. Guardrails refuse (never queue) worker→worker recursion beyond the origin-chain depth cap and a second writer on the same cwd; allow_concurrent_cwd: true only for read-only tasks.',
   inputSchema: {
     task: z.string().describe('Full task description for the worker, self-contained'),
     tier: tierSchema,
@@ -236,7 +236,7 @@ server.registerTool('dsh_run_worker', {
 
 server.registerTool('dsh_worker_config', {
   title: 'Session worker configuration',
-  description: 'Read or update session-level worker settings: enable/disable dispatch, default tier/effort/timeout, and execution mode (auto = prefer hub, hub = require the DSH hub, standalone = never use it). Call with no arguments to read the current configuration; the output includes worker_profiles — named external-CLI backends (agy, grok) usable via the worker= parameter of dsh_run_worker / dsh_spawn_worker — and origin, the inherited worker→worker dispatch chain with its depth limit. Settings last for this session only.',
+  description: 'Read or update session-level worker settings: enable/disable dispatch, default tier/effort/timeout, execution mode (auto = prefer hub, hub = require the DSH hub, standalone = never use it), tier policy and failure escalation. Call with no arguments to read. The output includes worker_profiles — the external-CLI backends (agy, grok) usable via the worker= parameter of dsh_run_worker / dsh_spawn_worker — and origin, the inherited worker→worker dispatch chain with its depth limit. Session-only.',
   inputSchema: {
     enabled: z.boolean().optional().describe('false = refuse all worker dispatch this session'),
     default_tier: z.enum(['flash', 'pro']).optional(),
@@ -266,9 +266,9 @@ server.registerTool('dsh_worker_config', {
 
 server.registerTool('dsh_spawn_worker', {
   title: 'Spawn DSH worker (async)',
-  description: 'Start a DSH (DeepSeek Harness) coding agent in the background and return immediately with a job id. Use dsh_worker_status / dsh_worker_result to follow up. Good for fanning out several workers in parallel. Dispatches are guarded: worker→worker recursion (origin chain depth/loop) and two workers writing the same cwd at once are refused with readable errors; pass allow_concurrent_cwd: true only for read-only parallel tasks.',
+  description: 'Start a DSH (DeepSeek Harness) coding agent in the background and return immediately with a job id — use it to fan out several workers in parallel. The spawn response carries claims, not results: always fetch each job\'s final result later with dsh_worker_result. Same tier guidance as dsh_run_worker: flash for mechanical, well-scoped work, pro for multi-file changes and debugging. The task string must be self-contained (absolute paths, acceptance criteria, constraints) — the worker sees nothing of your conversation. worker="agy" or "grok" only when the user explicitly asks for that CLI, never a default. Guardrails refuse (never queue) origin-chain recursion and a second writer on the same cwd; allow_concurrent_cwd: true only for read-only fan-out.',
   inputSchema: {
-    task: z.string(),
+    task: z.string().describe('Full task description for the worker, self-contained — the worker has no conversation context, so include absolute paths, acceptance criteria and constraints'),
     tier: tierSchema,
     effort: effortSchema,
     worker: workerSchema,
@@ -329,7 +329,7 @@ server.registerTool('dsh_spawn_worker', {
 
 server.registerTool('dsh_worker_status', {
   title: 'DSH worker status',
-  description: 'List all DSH worker jobs in this session with live progress (turn/step, current tool, token usage) plus the cwd advisory locks (kind: "cwd-lock" entries show which workspace is held by which running job).',
+  description: 'List all DSH worker jobs in this session with live progress (turn/step, current tool, token usage) plus the cwd advisory locks (kind: "cwd-lock" entries show which workspace is held by which running job). Use it before dispatching into a busy workspace and to see whether spawned jobs are still running.',
   inputSchema: {},
 }, async () => {
   const hubUp = await hubAvailable();
@@ -360,7 +360,7 @@ server.registerTool('dsh_worker_status', {
 
 server.registerTool('dsh_worker_result', {
   title: 'DSH worker result',
-  description: 'Fetch the result of a worker job, optionally waiting for it to finish.',
+  description: 'Fetch the final result of a worker job, optionally waiting up to wait_seconds. Always call this for spawned jobs: the dsh_spawn_worker response returns only the job id and status claims, never the result. If a result seems missing or stale (for example after a hub restart orphaned the job), verify against the working tree and dsh_worker_status instead of trusting the summary.',
   inputSchema: {
     job_id: z.string(),
     wait_seconds: z.number().int().min(0).max(7200).default(0).describe('0 = return current state immediately'),
@@ -382,7 +382,7 @@ server.registerTool('dsh_worker_result', {
 
 server.registerTool('dsh_worker_cancel', {
   title: 'Cancel DSH worker',
-  description: 'Cancel a running worker job (terminates its runtime process).',
+  description: 'Cancel a running worker job: terminates its runtime process and releases its cwd lock. Use it when a workspace lock is held by a job that is stuck or no longer needed, so a new dispatch to that cwd can proceed.',
   inputSchema: { job_id: z.string() },
 }, async ({ job_id }) => {
   if (job_id.startsWith('hub-')) {

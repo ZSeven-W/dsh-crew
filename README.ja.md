@@ -5,8 +5,8 @@
 <h1 align="center">DSH Crew</h1>
 
 <p align="center">
-  <strong><a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> プラグイン: Claude Code / Codex から DSH エージェントへ作業をディスパッチします。ホスト本来の subagent UI はそのままです。</strong><br />
-  <sub>ネイティブ進捗 UI &bull; tier ポリシー &amp; エスカレーション &bull; ホスト内 DSH セッション &bull; ビジョン &amp; 画像生成 &bull; ワンクリックインストール</sub>
+  <strong><a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> プラグイン: Claude Code / Codex / Antigravity / Grok から DSH エージェントへ作業をディスパッチします。ホスト本来の subagent UI はそのままです。</strong><br />
+  <sub>ネイティブ進捗 UI &bull; tier ポリシー &amp; エスカレーション &bull; ディスパッチガードレール &bull; ジョブボード &bull; ホスト内 DSH セッション &bull; ビジョン &amp; 画像生成 (ネイティブファースト) &bull; ワンクリックインストール</sub>
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@
 
 ## DSH Crew を使う理由
 
-DSH Crew は、オープンソースのエージェントハーネスである [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) のプラグインです。Claude Code と Codex から DSH エージェントをディスパッチできるようにします。orchestrator は自身のモデルを維持したまま、作業は DSH 本来のツール・サンドボックス・プリセット・セッション履歴を持つ本物の DSH エージェント上で実行され、ホスト側ではライブ進捗付きのネイティブ subagent として表示され続けます。
+DSH Crew は、オープンソースのエージェントハーネスである [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) のプラグインです。Claude Code、Codex、Antigravity、Grok から DSH エージェントをディスパッチできるようにします。orchestrator は自身のモデルを維持したまま、作業は DSH 本来のツール・サンドボックス・プリセット・セッション履歴を持つ本物の DSH エージェント上で実行され、ホスト側ではライブ進捗付きのネイティブ subagent として表示され続けます。
 
 作業を実行するのは DSH エージェントであり、単なるモデル呼び出しではありません。tier (`flash` / `pro`) によって、そのエージェントがハーネスに設定されたモデルロースターからどれだけの能力を得るかが決まります — 現在は DeepSeek V4 Flash と V4 Pro — そのため DSH 側でモデルを変更しても、ここでの変更は不要です。
 
@@ -40,7 +40,7 @@ DSH Crew は、オープンソースのエージェントハーネスである [
 
 ### 🧵 ネイティブ進捗 UI
 
-worker は Claude Code / Codex 上で通常の subagent として表示され、ディスパッチ数・実行中ステップ・ツール呼び出し・トークン使用量がすべてホスト自身のタスクパネルに表示されます。さらに claude-hud の statusline セグメント: `⚙dsh 1▶pro 2m14s 21.7k/606 ✓3`。
+worker は Claude Code / Codex / Antigravity / Grok 上で通常の subagent として表示され、ディスパッチ数・実行中ステップ・ツール呼び出し・トークン使用量がすべてホスト自身のタスクパネルに表示されます。さらに claude-hud の statusline セグメント: `⚙dsh 1▶pro 2m14s 21.7k/606 ✓3`。
 
 </td>
 <td width="50%">
@@ -63,14 +63,30 @@ bundle を DSH プロファイルにインストールすると、各 worker は
 
 ### 👁️ ビジョンと画像生成
 
-DSH のモデルはテキストのみです。`describe_image` と `generate_image` は、すでにお持ちの CLI — Claude、Codex、Grok、Antigravity — または設定した任意の OpenAI 互換 API の目と筆を借ります。貼り付けた画像は会話内で表示されたまま、テキストとしてモデルに渡されます。
+DSH のモデルはテキストのみです。`describe_image` は、キーが利用可能なときは DeepSeek 独自の VL モデル (`deepseek-v4-flash-vision-exp`) を優先し、なければすでにお持ちの CLI — Claude、Codex、Grok、Antigravity — または設定した任意の OpenAI 互換 API にフォールバックします。`generate_image` は同じ CLI の筆を借ります。貼り付けた画像は会話内で表示されたまま、テキストとしてモデルに渡されます。
 
 </td>
 </tr>
 <tr>
 <td width="50%">
 
-### 🔌 カスタムプロバイダー
+### 🛡️ ディスパッチガードレール
+ 
+ すべてのディスパッチは、何かが起動する前にチェックされます。worker→worker のネスティングは origin-chain の深さ 3 で上限が設定され、循環は拒否されます。別のジョブがすでに保持しているワークスペースへの 2 つ目の worker は、保持者の情報とともに拒否されます — 黙ってキューに入ることは決してありません。拒否は読みやすいエラーです: 待つか、スコープを組み直してください。迂回しないでください。
+ 
+ </td>
+ <td width="50%">
+ 
+ ### 📋 ジョブボード
+ 
+ DSH Crew パネルはジョブボードを兼ねています。実行中・完了を問わず、すべての worker ジョブが tier、effort、ライブ進捗、トークンとともに一覧表示され、保持されているワークスペースにはその保持者が表示され、途中で消えたジョブ (例: hub の再起動) は、黙って消えるのではなく孤立ゴーストとして表面化します。
+ 
+ </td>
+ </tr>
+ <tr>
+ <td width="50%">
+ 
+ ### 🔌 カスタムプロバイダー
 
 独自のエンドポイント (Base URL + API キー + モデル) またはローカルコマンドテンプレートを利用できます。各プロバイダーには接続テストがあり、到達性と認証をチェックしたうえで実際のビジョン呼び出しを 1 回行うため、問題はタスクの途中ではなくいま判明します。
 
@@ -79,7 +95,7 @@ DSH のモデルはテキストのみです。`describe_image` と `generate_ima
 
 ### 📦 ワンクリックインストール
 
-設定ページから Claude Code プラグインと Codex ロールファイルをインストール・更新できます — marketplace 登録、権限許可リスト、HUD 配線、このマシン向けに展開された絶対パス — そして同じくらい簡単に復元できます。すべての設定ファイルは変更前にバックアップされます。
+設定ページから Claude Code プラグイン、Codex ロールファイル、Antigravity / Grok の agent・スキル・コマンドをインストール・更新できます — marketplace 登録、権限許可リスト、HUD 配線、このマシン向けに展開された絶対パス — そして同じくらい簡単に復元できます。すべての設定ファイルは変更前にバックアップされます。
 
 </td>
 </tr>
@@ -88,9 +104,10 @@ DSH のモデルはテキストのみです。`describe_image` と `generate_ima
 ## 動作の仕組み
 
 ```
-Claude Code / Codex (orchestrator, keeps its own model)
+Claude Code / Codex / Antigravity / Grok (orchestrator, keeps its own model)
   └─ ds-flash / ds-pro  ← native subagent shell (progress shows in the host's task UI)
-       └─ MCP: dsh_run_worker(tier, effort, cwd)
+       └─ MCP: dsh_run_worker(tier, effort, cwd, worker=)
+            ├─ worker="agy"/"grok" → that external CLI runs the task (explicit opt-in)
             ├─ hub reachable → session inside DSH (visible in the Web UI, grouped by cwd)
             └─ otherwise     → dsh-jsonrpc-agent runtime (worker.cordis.yml)
                  └─ DeepSeek V4 Flash / Pro (DSH SDK, event stream → progress and token stats)
@@ -109,6 +126,8 @@ Claude Code / Codex (orchestrator, keeps its own model)
   <img src="./docs/images/dsh-crew-jobs.png" alt="DSH Crew" width="100%" />
 </p>
 <p align="center"><sub>DSH Crew パネルから見た同じ実行: どのホストが各ジョブをディスパッチしたか、tier と effort、進捗とトークン使用量。</sub></p>
+
+<p align="center"><sub>パネルはジョブボードでもあります: 実行中および完了したジョブが tier・進捗・トークンとともに一覧に残り、保持されているワークスペースにはその保持者の名前が表示され、途中で消えたジョブ (hub の再起動) は、黙って消えるのではなく孤立ゴーストとして表面化します。</sub></p>
 
 ## インストール
 
@@ -132,7 +151,7 @@ dsh web
 
 hub モード — 上記のインストール — では、worker は DSH インスタンス内で実行され、すでに設定されている DSH の DeepSeek 認証情報を使用します。追加の設定は不要です。
 
-スタンドアロン フォールバックのみが独自のキーを必要とします。DSH インスタンスが実行されていない状態で Claude Code / Codex からディスパッチすると、worker ランタイムが個別のプロセスとして起動します。[platform.deepseek.com](https://platform.deepseek.com) から API キーを取得し、`~/.config/dsh-crew/.env` に書きます:
+スタンドアロン フォールバックのみが独自のキーを必要とします。DSH インスタンスが実行されていないホストからディスパッチすると、worker ランタイムが個別のプロセスとして起動します。[platform.deepseek.com](https://platform.deepseek.com) から API キーを取得し、`~/.config/dsh-crew/.env` に書きます:
 
 ```
 DEEPSEEK_API_KEY=sk-...
@@ -146,7 +165,17 @@ node scripts/smoke.mjs
 
 smoke テストは利用可能なパスを通じて 1 つの安い job をディスパッチします — DSH インスタンスが実行されているときは hub、それ以外は standalone — そして使用したパスを表示します。十数秒で `smoke test passed — configuration OK` が表示されるはずです。失敗時は理由が表示され、テストされたパスに限定されます。
 
-その後、設定 → DSH Crew から Claude Code / Codex 連携をワンクリックで導入します。
+その後、設定 → DSH Crew を開き、ホスト連携 — Claude Code、Codex、Antigravity、Grok — をワンクリックで導入するか、同じインストーラーをコマンドラインから実行します:
+
+```bash
+node src/install/cli.mjs claude   # Claude Code プラグイン: marketplace + 権限 + HUD セグメント
+node src/install/cli.mjs codex    # Codex agent + プロンプト
+node src/install/cli.mjs agy      # Antigravity MCP 設定 + agent + スキル
+node src/install/cli.mjs grok     # Grok MCP 設定 + agent + コマンド
+node src/install/cli.mjs all      # 4 つのホストすべてを一度に
+# 対称的にアンインストール (uninstall-claude | uninstall-codex | uninstall-agy | uninstall-grok):
+node src/install/cli.mjs uninstall-claude
+```
 
 ## 背景と用語
 
@@ -187,12 +216,13 @@ smoke テストは利用可能なパスを通じて 1 つの安い job をディ
 | `/dsh-crew:config` | このセッションの既定値を表示・設定: `tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`reset` |
 | `/dsh-crew:on` · `/dsh-crew:off` | このセッションのディスパッチを有効／無効にする（無効はハードスイッチでツールが拒否） |
 | `/dsh-crew:status` | worker ジョブの実況: tier、進捗、トークン、実行中のツール |
+| `/dsh-crew:playbook` | ディスパッチのベストプラクティス: flash と pro の選び方、自己完結型のブリーフ、並列実行、結果の検証、ガードレール |
 
 ## Codex
 
 ### インストール
 
-インストーラーの使用を推奨します (このマシン向けにパスを自動展開し、`/dsh-config`、`/dsh-status` コマンドをコピーします):
+インストーラーの使用を推奨します (このマシン向けにパスを自動展開し、`/dsh-config`、`/dsh-status`、`/dsh-playbook` プロンプトをコピーします):
 
 ```bash
 node src/install/cli.mjs codex
@@ -220,35 +250,112 @@ cp codex/agents/*.toml ~/.codex/agents/    # global or project-level .codex/agen
 
 ### セッションコマンド
 
-Codex 側にも同じ 2 つのプロンプトが入ります:
+Codex 側には 3 つのプロンプトが入ります:
 
 | コマンド | 動作 |
 |---|---|
 | `/dsh-config` | このセッションの既定値を表示・設定: `tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`reset` |
 | `/dsh-status` | worker ジョブの実況: tier、進捗、トークン、実行中のツール |
+| `/dsh-playbook` | ディスパッチのベストプラクティス: flash と pro の選び方、自己完結型のブリーフ、並列実行、結果の検証、ガードレール |
+
+## Antigravity (agy)
+
+### インストール
+
+```bash
+node src/install/cli.mjs agy
+```
+
+dsh-crew MCP サーバーを `~/.gemini/config/mcp_config.json` に登録し、`ds-flash` / `ds-pro` agent と `dsh-config`、`dsh-status`、`dsh-playbook` スキルを `~/.gemini/config/` にインストールします (すべてのファイルは事前にバックアップされます)。インストール後はセッションを再起動してください。
+
+### 使い方
+
+- `ds-flash` または `ds-pro` をタスクのディスパッチ先 agent として選択します
+- `dsh_worker_config` がセッションの既定値を読み取り、または上書きします
+
+### セッションスキル
+
+| スキル | 動作 |
+|---|---|
+| `/dsh-config` | このセッションの既定値を表示・設定 (tier / effort / mode / timeout / policy / escalation / reset) |
+| `/dsh-status` | worker ジョブの実況: tier、進捗、トークン、実行中のツール |
+| `/dsh-playbook` | ディスパッチのベストプラクティス: flash と pro の選び方、自己完結型のブリーフ、並列実行、結果の検証、ガードレール |
+
+### 注意点
+
+- agy は worker を**フル承認** (`--dangerously-skip-permissions` + accept-edits) で実行します: agy 1.1.16 にはワークスペーススコープの権限モードがないため、ヘッドレス worker はツールリクエストを自動承認する必要があります。
+
+アンインストール: `node src/install/cli.mjs uninstall-agy`
+
+## Grok
+
+### インストール
+
+```bash
+node src/install/cli.mjs grok
+```
+
+`[mcp_servers.dsh-crew]` セクションを `~/.grok/config.toml` に書き込み、`ds-flash` / `ds-pro` agent と `/dsh-config`、`/dsh-status`、`/dsh-playbook` コマンドを `~/.grok/` にインストールします (すべてのファイルは事前にバックアップされます)。
+
+### 使い方
+
+- `ds-flash` または `ds-pro` をタスクのディスパッチ先 agent として選択します
+
+### セッションコマンド
+
+| コマンド | 動作 |
+|---|---|
+| `/dsh-config` | このセッションの既定値を表示・設定 (tier / effort / mode / timeout / policy / escalation / reset) |
+| `/dsh-status` | worker ジョブの実況: tier、進捗、トークン、実行中のツール |
+| `/dsh-playbook` | ディスパッチのベストプラクティス: flash と pro の選び方、自己完結型のブリーフ、並列実行、結果の検証、ガードレール |
+
+### 注意点
+
+- セキュリティ設計上、grok は信頼されていないプロジェクトディレクトリではリポジトリレベルの MCP サーバーを起動しません (`grok mcp doctor` は "folder untrusted" と報告します)。グローバルインストールは影響を受けません — ディレクトリを変更するか、`--trust` を渡してください。
+- grok の worker は `bypassPermissions` で実行されます (常に承認。ヘッドレス自動化のために grok のドキュメントが推奨する方式です)。deny ルールと hooks は引き続き適用されます。
+
+アンインストール: `node src/install/cli.mjs uninstall-grok`
 
 ## MCP ツール
 
 | ツール | 説明 |
 |---|---|
-| `dsh_run_worker` | 同期タスクディスパッチ (`tier`: flash/pro、`effort`: off/high/max、`cwd`)。結果を待機します |
-| `dsh_spawn_worker` | 非同期タスクディスパッチ。ジョブ id を返します (並列 fan-out 用) |
-| `dsh_worker_status` | 全ジョブのリアルタイム進捗を照会 (turn/step/現在のツール/トークン) |
+| `dsh_run_worker` | ブロッキングタスクディスパッチ (`tier`: flash/pro、`effort`: off/high/max、`cwd`、`worker`)。結果を待機します |
+| `dsh_spawn_worker` | 非同期ディスパッチ。ジョブ id を返します (並列 fan-out 用)。結果は `dsh_worker_result` で収集します |
+| `dsh_worker_status` | 全ジョブのリアルタイム進捗を照会 (turn/step/現在のツール/トークン) + cwd アドバイザリロック |
 | `dsh_worker_result` | 結果を取得。`wait_seconds` を指定して待機できます |
 | `dsh_worker_cancel` | 指定したジョブをキャンセルし、そのランタイムプロセスを終了します |
+| `dsh_worker_config` | セッション既定値 (tier、effort、mode、timeout、policy、escalation) の読み取り/設定と `worker_profiles` の一覧表示 |
 
 進捗は同時に `~/.config/dsh-crew/status.d/` へミラーリングされます (ライターごとに 1 つのシャードファイル。statusline / 外部監視から読み取れます)。
+
+## ディスパッチガードレール
+
+すべてのディスパッチは、何かが起動する前にチェックされます — 拒否は読みやすいエラーであり、黙ってキューに入ることは決してありません:
+
+- **Origin chain**: 各ディスパッチは worker→worker の origin chain に 1 ホップを追加します。上限 (`origin_depth_limit`、デフォルト 3) より深いネスティングは拒否され、循環 (同じ backend + cwd が 2 回出現すること) も同様です — 再帰的な worker の自己増幅を止めるガードです。
+- **cwd アドバイザリロック**: ワークスペースごとに実行中の worker は 1 つです。保持されているワークスペースへの 2 つ目のディスパッチは、保持者のジョブ id、backend、開始時刻とともに拒否されます — それが落ち着くまで待つか、`dsh_worker_cancel` でキャンセルするか、`allow_concurrent_cwd: true` を渡してください (読み取り専用タスクのみ)。
+
+## ディスパッチプレイブック
+
+上手にディスパッチする方法 — flash と pro の選び方、自己完結型のブリーフ、安全な並列実行、結果の検証、そして上記のガードレール — は、ホストごとのプレイブックとして同梱されています: `/dsh-crew:playbook` (Claude Code スキル)、`/dsh-playbook` (Codex プロンプト、Antigravity スキル、Grok コマンド)。
+
+## 明示的な CLI バックエンド
+
+`worker="agy"` / `worker="grok"` は、DSH の tier ロジックの代わりに、その外部 CLI (backend × model × effort) へディスパッチを固定します。これは明示的なオプトインです — デフォルトはないため、ユーザーがその CLI を求めた場合にのみ設定してください。注意点: grok は信頼されていないフォルダではリポジトリローカルの MCP サーバーを起動せず、agy は worker をフル承認で実行します (ワークスペーススコープの権限モードなし)。
 
 ## マルチモーダル: ビジョンと画像生成
 
 **DeepSeek はテキストのみのモデルであり**、画像入力や生成には対応していません。このプラグインはこれらの能力を MCP ツール経由で外部から調達します:
+
+**ネイティブビジョン優先**: ビジョンプロバイダーがビルトイン CLI (または明示的に `native`) の場合、`describe_image` はまず DeepSeek 独自の VL モデル `deepseek-v4-flash-vision-exp` を試します (直接 API 呼び出し。キーは `DEEPSEEK_API_KEY` または `~/.config/dsh-crew/.env` から取得)。失敗した場合はグレースフルに下記の CLI プロバイダーチェーンへフォールバックします (フォールバックとして維持されます)。画像生成には影響しません — ネイティブモデルは画像を見るだけです。
 
 | ツール | 説明 |
 |---|---|
 | `describe_image` | 画像 (スクリーンショット、デザイン、図表など) を見て質問に回答します。結果はプロバイダー + モデル + 画像 + 質問の組み合わせでキャッシュされます |
 | `generate_image` | テキスト説明から画像を生成し、指定した絶対パスに保存します。出力はフラットなビットマップです (レイヤー編集には OpenPencil が必要) |
 
-**セッションへの画像貼り付け**: DSH でモデルを `DeepSeek (vision) ◉` に切り替えると、画像を直接貼り付けられます。画像はセッション内に残り、通常どおり表示されます。プラグインは画像の後に書き起こしテキストを追記し、送信前に画像を除去します — あなたには画像が見え、モデルにはテキストが読まれます。
+**セッションへの画像貼り付け**: DSH でモデルを `DeepSeek (vision) ◉` に切り替えると、画像を直接貼り付けられます。画像はセッション内に残り、通常どおり表示されます。プラグインは画像の後に書き起こしテキストを追記し、送信前に画像を除去します — あなたには画像が見え、モデルにはテキストが読まれます。書き起こしは同じネイティブファーストのはしごをたどります: キーが利用可能なら DeepSeek の VL モデル、なければ設定済みの CLI プロバイダーです。
 
 ### 設定
 
@@ -256,6 +363,7 @@ Codex 側にも同じ 2 つのプロンプトが入ります:
 
 **ビジョンプロバイダー** (画像閲覧):
 
+- `native` / `deepseek-native` (DeepSeek 独自の VL モデル — キーが利用可能なときは、すべてのビルトインプロバイダーで自動的に最初に試されます)
 - `claude-code` (デフォルト。haiku を使用し、低コスト)
 - `codex` (GPT を使用。特定のモデルを指定可能)
 - `grok` (Grok を使用)
@@ -302,8 +410,8 @@ Codex 側にも同じ 2 つのプロンプトが入ります:
 - **ループバック API**:
   - `POST/GET /_dsh/dsh-crew/jobs`: タスクの起動、一覧、結果のロングポーリング、キャンセル
   - `GET /_dsh/dsh-crew/ping`: ヘルスチェック (MCP shim が hub の稼働検知に使用)
-  - `POST /_dsh/dsh-crew/install`: Claude Code / Codex 連携のワンクリックインストール (`src/install/` のバックエンド)
-- **自動検出**: CC/Codex の MCP shim が hub を自動検出します (`DSH_CREW_HUB` 環境変数、デフォルト `http://127.0.0.1:3080`)
+  - `POST /_dsh/dsh-crew/install`: ホスト連携のワンクリックインストール — Claude Code / Codex / Antigravity / Grok (`src/install/` のバックエンド)
+- **自動検出**: ホスト側の MCP shim が hub を自動検出します (`DSH_CREW_HUB` 環境変数、デフォルト `http://127.0.0.1:3080`)
   - DSH Web が稼働中 → ジョブは hub モードで実行されます (`mode: "hub"`)
   - 未稼働 → standalone ランタイムにフォールバックします
 
@@ -326,7 +434,7 @@ Codex 側にも同じ 2 つのプロンプトが入ります:
 ### DSH Web 稼働中 → hub モードが自動有効
 
 - **現状**: `dsh plugin add dsh-crew` で DSH Web プロファイルにインストール済みであれば、ジョブはホスト内で第一級セッションとして実行され、Web UI のセッション一覧に表示されます
-- **推奨**: ローカル開発の反復中は hub モードの有効化を推奨します。worker の進捗を Web UI で完全に観察できます。マシン間の共同作業や Web UI のない環境では、Claude Code / Codex のシェル方式を使用してください
+- **推奨**: ローカル開発の反復中は hub モードの有効化を推奨します。worker の進捗を Web UI で完全に観察できます。マシン間の共同作業や Web UI のない環境では、ディスパッチ元ホストのシェル方式を使用してください
 
 ### 既知の事項
 

@@ -132,7 +132,7 @@ export function uninstallCodex({ home = homedir() } = {}) {
     const p = join(home, '.codex', 'agents', f);
     if (existsSync(p)) { backup(p); rmSync(p); actions.push(`removed: ${p} (backup kept)`); }
   }
-  for (const f of ['dsh-config.md', 'dsh-status.md']) {
+  for (const f of ['dsh-config.md', 'dsh-status.md', 'dsh-playbook.md']) {
     const p = join(home, '.codex', 'prompts', f);
     if (existsSync(p)) { rmSync(p); actions.push(`removed: ${p}`); }
   }
@@ -295,7 +295,7 @@ export function installAgy({ home = homedir() } = {}) {
   }
 
   // 3. Skills (agy's command/prompt packaging — /skills in the CLI).
-  for (const s of ['dsh-config', 'dsh-status']) {
+  for (const s of ['dsh-config', 'dsh-status', 'dsh-playbook']) {
     const dest = join(home, '.gemini', 'config', 'skills', s, 'SKILL.md');
     mkdirSync(dirname(dest), { recursive: true });
     const b = backup(dest);
@@ -327,7 +327,7 @@ export function uninstallAgy({ home = homedir() } = {}) {
     }
   }
 
-  for (const s of ['dsh-config', 'dsh-status']) {
+  for (const s of ['dsh-config', 'dsh-status', 'dsh-playbook']) {
     const dir = join(home, '.gemini', 'config', 'skills', s);
     const sk = join(dir, 'SKILL.md');
     if (existsSync(sk)) {
@@ -388,10 +388,10 @@ export function installGrok({ home = homedir() } = {}) {
     actions.push(`agent: ${dest}`);
   }
 
-  // 3. Slash commands (/dsh-config, /dsh-status).
+  // 3. Slash commands (/dsh-config, /dsh-status, /dsh-playbook).
   const commandsDir = join(home, '.grok', 'commands');
   mkdirSync(commandsDir, { recursive: true });
-  for (const f of ['dsh-config.md', 'dsh-status.md']) {
+  for (const f of ['dsh-config.md', 'dsh-status.md', 'dsh-playbook.md']) {
     const dest = join(commandsDir, f);
     const b = backup(dest);
     if (b) actions.push(`backup: ${b}`);
@@ -428,7 +428,7 @@ export function uninstallGrok({ home = homedir() } = {}) {
     }
   }
 
-  for (const f of ['dsh-config.md', 'dsh-status.md']) {
+  for (const f of ['dsh-config.md', 'dsh-status.md', 'dsh-playbook.md']) {
     const p = join(home, '.grok', 'commands', f);
     if (existsSync(p)) {
       rmSync(p);

@@ -5,8 +5,8 @@
 <h1 align="center">DSH Crew</h1>
 
 <p align="center">
-  <strong>一個 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> 外掛程式：從 Claude Code / Codex 分派工作給 DSH 代理，而不放棄主機的原生 subagent UI。</strong><br />
-  <sub>原生進度 UI • Tier 策略與升級 • 主機內 DSH 工作階段 • 視覺與圖片生成 • 單鍵安裝</sub>
+  <strong>一個 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a> 外掛程式：從 Claude Code / Codex / Antigravity / Grok 分派工作給 DSH 代理，而不放棄主機的原生 subagent UI。</strong><br />
+  <sub>原生進度 UI • Tier 策略與升級 • 分派護欄 • 任務看板 • 主機內 DSH 工作階段 • 視覺與圖片生成（原生優先） • 單鍵安裝</sub>
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@
 
 ## 為什麼選擇 DSH Crew
 
-DSH Crew 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）開源代理框架的外掛程式。它使 DSH 代理可從 Claude Code 和 Codex 分派：協調器保留自己的模型，工作在帶有該框架的工具、沙箱、預設和工作階段歷史紀錄的真正 DSH 代理上執行，主機仍然將其顯示為帶有即時進度的原生 subagent。
+DSH Crew 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）開源代理框架的外掛程式。它使 DSH 代理可從 Claude Code、Codex、Antigravity 與 Grok 分派：協調器保留自己的模型，工作在帶有該框架的工具、沙箱、預設和工作階段歷史紀錄的真正 DSH 代理上執行，主機仍然將其顯示為帶有即時進度的原生 subagent。
 
 運行工作的是 DSH 代理，不是裸模型呼叫。Tier（`flash` / `pro`）選擇該代理從框架配置名單取得多少能力 — 目前為 DeepSeek V4 Flash 和 V4 Pro — 因此 DSH 中的模型變更不需要此處變更。
 
@@ -40,7 +40,7 @@ DSH Crew 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 ### 🧵 原生進度 UI
 
-Worker 在 Claude Code / Codex 中顯示為一般 subagent — 分派計數、執行中步驟、工具呼叫和代幣使用都顯示在主機自己的工作面板中，加上 claude-hud 狀態列區段：`⚙dsh 1▶pro 2m14s 21.7k/606 ✓3`。
+Worker 在 Claude Code / Codex / Antigravity / Grok 中顯示為一般 subagent — 分派計數、執行中步驟、工具呼叫和代幣使用都顯示在主機自己的工作面板中，加上 claude-hud 狀態列區段：`⚙dsh 1▶pro 2m14s 21.7k/606 ✓3`。
 
 </td>
 <td width="50%">
@@ -63,7 +63,23 @@ Worker 在 Claude Code / Codex 中顯示為一般 subagent — 分派計數、�
 
 ### 👁️ 視覺與圖片生成
 
-DSH 的模型是純文字。`describe_image` 和 `generate_image` 借用您已有的 CLI 的眼睛和筆刷 — Claude、Codex、Grok、Antigravity — 或任何您配置的 OpenAI 相容 API。貼上的圖片在對話中保持可見並作為文字到達模型。
+DSH 的模型是純文字。`describe_image` 現在只要有 key 就優先使用 DeepSeek 自己的視覺模型（`deepseek-v4-flash-vision-exp`），失敗再回落到您本機已登入的 CLI — Claude、Codex、Grok、Antigravity — 或任何您配置的 OpenAI 相容 API。`generate_image` 借用同樣這些 CLI 的筆刷。貼上的圖片在對話中保持可見並作為文字到達模型。
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+### 🛡️ 分派護欄
+
+每次分派在真正拉起任何東西之前都會先過檢查。worker→worker 巢狀被限制在 origin chain 深度 3，環會被拒絕；workspace 已被執行中的任務持有時，第二個 worker 會被拒絕並附上持有者資訊 — 從不靜默排隊。拒絕是可讀的錯誤：等待或重新界定範圍，而不是繞過。
+
+</td>
+<td width="50%">
+
+### 📋 任務看板
+
+DSH Crew 面板同時是任務看板：每個 worker 任務 — 執行中或已結束 — 都帶著 tier、effort、即時進度與 token 列在板上，被持有的 workspace 會顯示持有者；中途消失的任務（例如 hub 重啟）會作為孤兒 ghost 浮出，而不是無聲消失。
 
 </td>
 </tr>
@@ -79,7 +95,7 @@ DSH 的模型是純文字。`describe_image` 和 `generate_image` 借用您已�
 
 ### 📦 單鍵安裝
 
-設定頁面為您安裝和更新 Claude Code 外掛程式以及 Codex 角色檔案 — marketplace 註冊、權限白名單、HUD 接線、為此機器轉譯的絕對路徑 — 也能輕鬆還原。每個設定檔都事先備份。
+設定頁面為您安裝和更新 Claude Code 外掛程式、Codex 角色檔案以及 Antigravity / Grok 的 agent、skill 和命令 — marketplace 註冊、權限白名單、HUD 接線、為此機器轉譯的絕對路徑 — 也能同樣一鍵還原。每個設定檔都事先備份。
 
 </td>
 </tr>
@@ -88,9 +104,10 @@ DSH 的模型是純文字。`describe_image` 和 `generate_image` 借用您已�
 ## 運作原理
 
 ```
-Claude Code / Codex（協調器，保留自己的模型）
+Claude Code / Codex / Antigravity / Grok（協調器，保留自己的模型）
   └─ ds-flash / ds-pro  ← 原生 subagent 殼層（進度顯示在主機的工作 UI）
-       └─ MCP: dsh_run_worker(tier, effort, cwd)
+       └─ MCP: dsh_run_worker(tier, effort, cwd, worker=)
+            ├─ worker="agy"/"grok" → 由該外部 CLI 執行任務（顯式 opt-in）
             ├─ hub 可達 → DSH 內工作階段（在 Web UI 中可見，按 cwd 分組）
             └─ 其他     → dsh-jsonrpc-agent runtime (worker.cordis.yml)
                  └─ DeepSeek V4 Flash / Pro（DSH SDK，事件流 → 進度和代幣統計）
@@ -109,6 +126,8 @@ Claude Code / Codex（協調器，保留自己的模型）
   <img src="./docs/images/dsh-crew-jobs.png" alt="DSH Crew" width="100%" />
 </p>
 <p align="center"><sub>DSH Crew 面板從 harness 一側看同一次執行：每個任務由哪個宿主分派、tier 與 effort、即時進度與 token 用量。</sub></p>
+
+<p align="center"><sub>面板同時是任務看板：執行中與已結束的任務都帶著 tier、進度與 token 留在板上，被持有的 workspace 會標出持有者，中途消失的任務（hub 重啟）會作為孤兒 ghost 浮出，而不是無聲消失。</sub></p>
 
 ## 安裝
 
@@ -132,7 +151,7 @@ dsh web
 
 在 hub 模式下 — 即上面的安裝方式 — worker 運行在 DSH 實例內部，使用 DSH 實例已設定的 DeepSeek 憑證。無需額外設定。
 
-僅 standalone 回落方案需要自己的 key：從 Claude Code / Codex 分派任務而沒有 DSH 實例運行時，會啟動一個獨立的 worker runtime 程序。從 [platform.deepseek.com](https://platform.deepseek.com) 取得 API key，寫入 `~/.config/dsh-crew/.env`：
+僅 standalone 回落方案需要自己的 key：從主機分派任務而沒有 DSH 實例運行時，會啟動一個獨立的 worker runtime 程序。從 [platform.deepseek.com](https://platform.deepseek.com) 取得 API key，寫入 `~/.config/dsh-crew/.env`：
 
 ```
 DEEPSEEK_API_KEY=sk-...
@@ -146,7 +165,17 @@ node scripts/smoke.mjs
 
 smoke 測試會挑一條可用的路徑派一個廉價任務——DSH 實例在跑就走 hub，否則走 standalone——並印出實際用的是哪條。十幾秒內看到 `smoke test passed — configuration OK` 即設定成功。失敗會印出具體原因，且只針對實際測的那條路徑。
 
-接著開啟 設定 → DSH Crew，一鍵裝好 Claude Code / Codex 整合。
+接著開啟 設定 → DSH Crew，一鍵裝好主機整合 — Claude Code、Codex、Antigravity、Grok，或用命令列驅動同一個安裝器：
+
+```bash
+node src/install/cli.mjs claude   # Claude Code 外掛程式：marketplace + 權限白名單 + HUD 狀態區段
+node src/install/cli.mjs codex    # Codex agent + prompt
+node src/install/cli.mjs agy      # Antigravity MCP 設定 + agent + skill
+node src/install/cli.mjs grok     # Grok MCP 設定 + agent + 命令
+node src/install/cli.mjs all      # 四個主機一次裝齊
+# 對稱卸載（uninstall-claude | uninstall-codex | uninstall-agy | uninstall-grok）：
+node src/install/cli.mjs uninstall-claude
+```
 
 ## 背景與術語
 
@@ -187,12 +216,13 @@ smoke 測試會挑一條可用的路徑派一個廉價任務——DSH 實例在�
 | `/dsh-crew:config` | 檢視或設定本階段預設值：`tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`reset` |
 | `/dsh-crew:on` · `/dsh-crew:off` | 開關本階段的分派（關閉是硬開關，工具層直接拒絕） |
 | `/dsh-crew:status` | worker 任務即時狀態：tier、進度、tokens、目前工具 |
+| `/dsh-crew:playbook` | 分派最佳實踐：flash vs pro 選擇、自包含任務簡報、平行、結果驗證、護欄 |
 
 ## Codex
 
 ### 安裝
 
-建議使用安裝程式（自動為此機器轉譯路徑，複製 `/dsh-config`、`/dsh-status` 命令）：
+建議使用安裝程式（自動為此機器轉譯路徑，複製 `/dsh-config`、`/dsh-status`、`/dsh-playbook` prompt）：
 
 ```bash
 node src/install/cli.mjs codex
@@ -220,35 +250,112 @@ cp codex/agents/*.toml ~/.codex/agents/    # 全域或專案級 .codex/agents/
 
 ### 工作階段命令
 
-Codex 端裝的是同樣兩條 prompt：
+Codex 端裝的是三條 prompt：
 
 | 命令 | 作用 |
 |---|---|
 | `/dsh-config` | 檢視或設定本階段預設值：`tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`reset` |
 | `/dsh-status` | worker 任務即時狀態：tier、進度、tokens、目前工具 |
+| `/dsh-playbook` | 分派最佳實踐：flash vs pro 選擇、自包含任務簡報、平行、結果驗證、護欄 |
+
+## Antigravity (agy)
+
+### 安裝
+
+```bash
+node src/install/cli.mjs agy
+```
+
+把 dsh-crew MCP server 註冊進 `~/.gemini/config/mcp_config.json`，並把 `ds-flash` / `ds-pro` agent 與 `dsh-config`、`dsh-status`、`dsh-playbook` skill 裝進 `~/.gemini/config/`（變更前自動備份）。安裝後重新啟動工作階段生效。
+
+### 使用方式
+
+- 選 `ds-flash` 或 `ds-pro` 作為 agent 來分派任務
+- `dsh_worker_config` 讀取或覆寫本階段預設值
+
+### 工作階段 skill
+
+| Skill | 作用 |
+|---|---|
+| `/dsh-config` | 檢視或設定本階段預設值（tier / effort / mode / timeout / policy / escalation / reset） |
+| `/dsh-status` | worker 任務即時狀態：tier、進度、tokens、目前工具 |
+| `/dsh-playbook` | 分派最佳實踐：flash vs pro 選擇、自包含任務簡報、平行、結果驗證、護欄 |
+
+### 注意事項
+
+- agy 以 **full approval** 跑 worker（`--dangerously-skip-permissions` + accept-edits）：agy 1.1.16 沒有 workspace 級別的權限模式，headless worker 只能自動批准工具請求。
+
+卸載：`node src/install/cli.mjs uninstall-agy`
+
+## Grok
+
+### 安裝
+
+```bash
+node src/install/cli.mjs grok
+```
+
+把 `[mcp_servers.dsh-crew]` 區段寫入 `~/.grok/config.toml`，並把 `ds-flash` / `ds-pro` agent 與 `/dsh-config`、`/dsh-status`、`/dsh-playbook` 命令裝進 `~/.grok/`（變更前自動備份）。
+
+### 使用方式
+
+- 選 `ds-flash` 或 `ds-pro` 作為 agent 來分派任務
+
+### 工作階段命令
+
+| 命令 | 作用 |
+|---|---|
+| `/dsh-config` | 檢視或設定本階段預設值（tier / effort / mode / timeout / policy / escalation / reset） |
+| `/dsh-status` | worker 任務即時狀態：tier、進度、tokens、目前工具 |
+| `/dsh-playbook` | 分派最佳實踐：flash vs pro 選擇、自包含任務簡報、平行、結果驗證、護欄 |
+
+### 注意事項
+
+- 出於安全設計，grok 不會在未信任的專案目錄裡啟動 repo 級 MCP server（`grok mcp doctor` 會報 "folder untrusted"）；全域安裝不受影響 — 換目錄或加 `--trust`。
+- grok worker 以 `bypassPermissions`（always-approve）執行，是 grok 文件推薦的 headless 自動化方式；deny 規則與 hooks 依然生效。
+
+卸載：`node src/install/cli.mjs uninstall-grok`
 
 ## MCP 工具
 
 | 工具 | 說明 |
 |---|---|
-| `dsh_run_worker` | 同步工作分派（`tier`: flash/pro，`effort`: off/high/max，`cwd`），等待結果 |
-| `dsh_spawn_worker` | 非同步工作分派，返回工作 id（用於平行分散） |
-| `dsh_worker_status` | 查詢所有工作的即時進度（turn/step/目前工具/代幣） |
+| `dsh_run_worker` | 同步工作分派（`tier`: flash/pro，`effort`: off/high/max，`cwd`，`worker`），等待結果 |
+| `dsh_spawn_worker` | 非同步工作分派，返回工作 id（用於平行分散）；用 `dsh_worker_result` 收集結果 |
+| `dsh_worker_status` | 查詢所有工作的即時進度（turn/step/目前工具/代幣）+ cwd 建議鎖 |
 | `dsh_worker_result` | 取得結果，可指定 `wait_seconds` 等待 |
 | `dsh_worker_cancel` | 取消指定工作，終止其 runtime 程序 |
+| `dsh_worker_config` | 檢視/設定本階段預設值（tier、effort、mode、timeout、policy、escalation），並列出 `worker_profiles` |
 
 進度同時複製到 `~/.config/dsh-crew/status.d/`（每個寫入者一個分片檔案，可由 statusline / 外部監控讀取）。
+
+## 分派護欄
+
+每次分派在真正拉起任何東西之前都會先過檢查 — 拒絕是可讀的錯誤，從不靜默排隊：
+
+- **Origin chain**：每次分派都會往 worker→worker origin chain 上追加一跳。巢狀超過上限（`origin_depth_limit`，預設 3）會被拒絕；環（同一個 backend + cwd 在鏈上出現兩次）也會被拒絕 — 這是阻止 worker 遞迴自我放大的護欄。
+- **cwd 建議鎖**：一個 workspace 同時只允許一個執行中的 worker。第二個分派會帶著持有者的工作 id、backend 與開始時間被拒絕 — 等它結束、用 `dsh_worker_cancel` 取消它，或傳 `allow_concurrent_cwd: true`（僅限唯讀任務）。
+
+## 分派手冊（playbook）
+
+如何把工作分派得好 — flash vs pro、自包含任務簡報、安全平行、結果驗證，以及上面的護欄 — 隨包按主機分發：`/dsh-crew:playbook`（Claude Code skill）、`/dsh-playbook`（Codex prompt、Antigravity skill、Grok 命令）。
+
+## 顯式 CLI 後端
+
+`worker="agy"` / `worker="grok"` 把一次分派固定到該外部 CLI（backend × model × effort），取代 DSH 的 tier 邏輯。它是顯式 opt-in — 沒有預設值，只有使用者點名要那個 CLI 時才設定。注意事項：grok 拒絕在未信任目錄裡啟動 repo 級 MCP server；agy 以 full approval 跑 worker（沒有 workspace 級別的權限模式）。
 
 ## 多模態：視覺與圖片生成
 
 **DeepSeek 是純文字模型**，不支援圖片輸入或生成。此外掛程式透過 MCP 工具從外部取得這些功能：
+
+**原生視覺優先**：當視覺 provider 是內建 CLI（或顯式 `native`）時，`describe_image` 會先試 DeepSeek 自己的視覺模型 `deepseek-v4-flash-vision-exp`（直接 API 呼叫；key 來自 `DEEPSEEK_API_KEY` 或 `~/.config/dsh-crew/.env`）。任何失敗都會優雅回落到下面的 CLI provider 鏈，這條鏈原樣保留作為兜底。圖片生成不受影響 — 原生模型只看圖。
 
 | 工具 | 說明 |
 |---|---|
 | `describe_image` | 透過查看圖片回答問題（螢幕截圖、設計、圖表等），結果由提供者 + 模型 + 圖片 + 問題快取 |
 | `generate_image` | 從文字描述生成圖片，儲存到指定絕對路徑；輸出是平面點陣圖（需要 OpenPencil 進行圖層編輯） |
 
-**工作階段圖片貼上**：在 DSH 中，切換模型到 `DeepSeek (vision) ◉` 以直接貼上圖片。圖片保留在工作階段中並正常顯示；外掛程式在其後附加轉錄文字並在傳送前移除圖片 — 你看到圖片，模型讀取文字。
+**工作階段圖片貼上**：在 DSH 中，切換模型到 `DeepSeek (vision) ◉` 以直接貼上圖片。圖片保留在工作階段中並正常顯示；外掛程式在其後附加轉錄文字並在傳送前移除圖片 — 你看到圖片，模型讀取文字。轉錄走同一條原生優先階梯：有 key 用 DeepSeek 視覺模型，否則用您配置的 CLI provider。
 
 ### 設定
 
@@ -256,6 +363,7 @@ Codex 端裝的是同樣兩條 prompt：
 
 **視覺提供者**（圖片查看）：
 
+- `native` / `deepseek-native`（DeepSeek 自己的視覺模型 — 只要有 key，每個內建 provider 都會自動先試它）
 - `claude-code`（預設，使用 haiku，便宜）
 - `codex`（使用 GPT，可指定特定模型）
 - `grok`（使用 Grok）
@@ -302,8 +410,8 @@ Codex 端裝的是同樣兩條 prompt：
 - **Loopback API**：
   - `POST/GET /_dsh/dsh-crew/jobs`：生成工作、列出、長時間輪詢結果、取消
   - `GET /_dsh/dsh-crew/ping`：健康檢查（MCP shim 使用此來檢測 hub 是否執行）
-  - `POST /_dsh/dsh-crew/install`：單鍵安裝 Claude Code / Codex 整合（`src/install/` 的後端）
-- **自動偵測**：CC/Codex 的 MCP shim 自動偵測 hub（`DSH_CREW_HUB` 環境變數，預設 `http://127.0.0.1:3080`）
+  - `POST /_dsh/dsh-crew/install`：單鍵安裝主機整合 — Claude Code / Codex / Antigravity / Grok（`src/install/` 的後端）
+- **自動偵測**：各主機的 MCP shim 自動偵測 hub（`DSH_CREW_HUB` 環境變數，預設 `http://127.0.0.1:3080`）
   - DSH Web 執行中 → 工作進入 hub 模式（`mode: "hub"`）
   - 未執行 → 回落到獨立 runtime
 
@@ -326,7 +434,7 @@ Codex 端裝的是同樣兩條 prompt：
 ### 執行 DSH Web → hub 模式自動啟用
 
 - **目前狀態**：如果 `dsh plugin add dsh-crew` 已安裝到 DSH Web 設定檔，工作在主機中作為一級工作階段執行，出現在 Web UI 工作階段列表中
-- **建議**：在本機開發反覆過程中，建議啟用 hub 模式；worker 進度可在 Web UI 中完全觀察；對於跨機器協作或無 Web UI 的環境，使用 Claude Code / Codex shell 方法
+- **建議**：在本機開發反覆過程中，建議啟用 hub 模式；worker 進度可在 Web UI 中完全觀察；對於跨機器協作或無 Web UI 的環境，使用分派主機的 shell 方法
 
 ### 已知項目
 
