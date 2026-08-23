@@ -25,8 +25,10 @@ mkdirSync(BASE, { recursive: true });
 
 const LONG_TASK = 'Print the integers from 1 to 4000 inclusive, one per line, and nothing else.';
 
+// WPC14: job.pgid is now the positive process-group id (detached spawn ⇒
+// pgid === pid); kill(-pgid, 0) probes the whole group.
 function groupAlive(pgid) {
-  try { process.kill(pgid, 0); return true; } catch (e) { return e.code !== 'ESRCH'; }
+  try { process.kill(-pgid, 0); return true; } catch (e) { return e.code !== 'ESRCH'; }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

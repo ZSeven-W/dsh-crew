@@ -299,7 +299,10 @@ export async function startCliJob({ worker, task, cwd, timeoutMs = DEFAULT_TIMEO
     return job;
   }
   job.pid = child.pid;
-  job.pgid = -child.pid;
+  // Positive process-group id (detached spawn ⇒ pgid === pid); kill(-pgid)
+  // signals the whole group. WPC14: the panel/proc-kill endpoint reads this
+  // from job views and shard mirrors to offer killing an orphaned worker.
+  job.pgid = child.pid;
   // cancelJob() in jobs.mjs calls job.harness.close() — same interface as the
   // standalone DSH harness.
   job.harness = { child, close: async () => killGroup(child) };

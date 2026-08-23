@@ -54,11 +54,20 @@ export function writerProcessAlive(writer) {
 export function readMergedStatus({ excludeWriter } = {}) {
   const jobs = [];
   const now = Date.now();
-  const consume = (raw) => {
+  const consume = (raw, file) => {
     try {
       const shard = JSON.parse(raw);
       if (shard.writer === excludeWriter) return;
-      if (now - +new Date(shard.updatedAt) > SHARD_FRESH_MS) return;
+      if (now - +new Date(shard.updatedAt) > SHARD_FRESH_MS) {
+        // A writer killed hard (SIGKILL, crash) never ran its exit cleanup, so
+        // its shard file lingers and every reader re-reads it forever. Once the
+        // shard is stale AND its writer is provably gone, drop the file. Unknown
+        // liveness (null) is left alone — never delete on a guess.
+        if (file && writerProcessAlive(shard.writer) === false) {
+          try { rmSync(file, { force: true }); } catch {}
+        }
+        return;
+      }
       // WPC10: expose the owning writer's liveness and last-write time so the
       // panel can flag running jobs whose instance died (orphans) instead of
       // showing them as running forever or dropping them silently.
@@ -75,7 +84,10 @@ export function readMergedStatus({ excludeWriter } = {}) {
   };
   try {
     for (const f of readdirSync(SHARD_DIR)) {
-      if (f.endsWith('.json')) { try { consume(readFileSync(join(SHARD_DIR, f), 'utf8')); } catch {} }
+      if (f.endsWith('.json')) {
+        const p = join(SHARD_DIR, f);
+        try { consume(readFileSync(p, 'utf8'), p); } catch {}
+      }
     }
   } catch {}
   try { consume(readFileSync(join(CONFIG_DIR, 'status.json'), 'utf8')); } catch {}

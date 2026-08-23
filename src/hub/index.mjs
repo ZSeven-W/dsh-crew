@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createShardWriter, readMergedStatus } from '../status-shard.mjs';
+import { procAlive, killWorkerProcess, parsePid, ProcKillRefused } from '../proc-kill.mjs';
 
 // No @deepseek-ai imports here on purpose: this plugin is loaded into the
 // profile realm, and importing our own package copies would create duplicate
@@ -315,6 +316,58 @@ export async function apply(ctx) {
     disposers.push(webServer.register({
       kind: 'exact', path: `${ROUTE_BASE}/ping`,
       handler: (req, res) => sendJson(res, 200, { ok: true, service: 'dsh-crew-hub' }),
+    }));
+
+    // WPC14: liveness probe for a ghost job's recorded pid. The panel probes
+    // orphaned tombstones that carry a pid so it can offer the "process still
+    // alive" badge and a kill button; same process.kill(pid, 0) probe the
+    // status shard uses for writer liveness (status-shard.mjs writerProcessAlive).
+    disposers.push(webServer.register({
+      kind: 'exact', path: `${ROUTE_BASE}/proc-alive`,
+      handler: async (req, res) => {
+        if (!isLoopbackRequest(req)) return sendJson(res, 403, { ok: false, error: 'loopback only' });
+        if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'GET only' }, { allow: 'GET' });
+        try {
+          const url = new URL(req.url, 'http://localhost');
+          const pid = parsePid(url.searchParams.get('pid'));
+          if (pid === null) return sendJson(res, 400, { ok: false, error: 'pid must be a positive integer' });
+          return sendJson(res, 200, { ok: true, alive: procAlive(pid) });
+        } catch (err) {
+          return sendJson(res, 500, { ok: false, error: err?.message ?? String(err) });
+        }
+      },
+    }));
+
+    // WPC14: verified kill of a ghost job's recorded pid. The pid may have
+    // been recycled since the job died, so the command line is read (ps) and
+    // must match a process shape this plugin spawns (DSH runtime / agy /
+    // grok) before anything is signalled; then SIGTERM (whole group when a
+    // pgid is given) and SIGKILL after a ~3s grace. Refusals are readable,
+    // in the origin-guard style.
+    disposers.push(webServer.register({
+      kind: 'exact', path: `${ROUTE_BASE}/proc-kill`,
+      handler: async (req, res) => {
+        if (!isLoopbackRequest(req)) return sendJson(res, 403, { ok: false, error: 'loopback only' });
+        if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'POST only' }, { allow: 'POST' });
+        try {
+          const body = await readBody(req);
+          adoptLang(body?.lang);
+          const pid = parsePid(body?.pid);
+          if (pid === null) return sendJson(res, 400, { ok: false, error: 'pid must be a positive integer' });
+          let pgid = null;
+          if (body.pgid !== undefined && body.pgid !== null) {
+            pgid = parsePid(body.pgid);
+            if (pgid === null) return sendJson(res, 400, { ok: false, error: 'pgid must be a positive integer' });
+          }
+          const result = await killWorkerProcess({ pid, pgid });
+          return sendJson(res, 200, { ok: true, ...result });
+        } catch (err) {
+          if (err instanceof ProcKillRefused) {
+            return sendJson(res, 403, { ok: false, error: err.message, code: err.code, pid: err.pid ?? null, command: err.command ?? null });
+          }
+          return sendJson(res, 500, { ok: false, error: err?.message ?? String(err) });
+        }
+      },
     }));
 
     disposers.push(webServer.register({

@@ -53,6 +53,11 @@ export function publishStatus() {
     // WPC10: last CLI stream event, so the panel can say how long a stalled
     // job has been quiet (mirrors v.activity.lastEventAt used by the MCP tools).
     activityLastEventAt: j.activity?.lastEventAt ?? null,
+    // WPC14: the OS process behind the job (CLI workers: detached process
+    // group; standalone runtimes: the lazily-spawned dsh runtime). Hub jobs
+    // publish through hub/index.mjs and carry no pid. Ghost tombstones
+    // snapshot this mirror, so the pid rides into the board's ghost registry.
+    pid: j.pid ?? null, pgid: j.pgid ?? null,
     origin_depth: j.origin_depth ?? null, origin_chain: j.origin_chain ?? null,
     startedAt: j.startedAt, endedAt: j.endedAt,
   })));
@@ -65,6 +70,9 @@ export function jobView(j, { withResult = false } = {}) {
     tokens: j.tokens, toolCalls: j.toolCalls,
     backend: backendOf(j), profile: profileOf(j), mode: modeOf(j),
     cwd: j.cwd,
+    // WPC14: pid (+ pgid when the worker leads its own process group) so the
+    // panel can probe and kill the OS process of an orphaned ghost job.
+    pid: j.pid ?? null, pgid: j.pgid ?? null,
     origin_depth: j.origin_depth ?? null, origin_chain: j.origin_chain ?? null,
     startedAt: j.startedAt, endedAt: j.endedAt,
   };
@@ -171,6 +179,15 @@ export async function startJob({ task, tier = 'flash', effort = 'max', cwd, maxT
 
     const sessionId = id;
     const onNotification = (n) => {
+      // WPC14: the standalone runtime process exists once the run has started
+      // (the SDK client spawns it lazily). Capture its pid on the first
+      // notification so views, shard mirrors and ghost tombstones carry it —
+      // and track it while running, since a failed handshake makes the SDK
+      // swap in a fresh client (new subprocess).
+      if (job.status === 'running') {
+        const child = harness.client?.child;
+        if (child?.pid && job.pid !== child.pid) { job.pid = child.pid; publishStatus(); }
+      }
       if (n.method === 'session.status') return;
       if (n.method !== 'session.event') return;
       if (n.params?.sessionId && n.params.sessionId !== sessionId) return;
