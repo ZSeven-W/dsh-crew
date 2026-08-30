@@ -195,7 +195,7 @@ One-click installation (choose one):
 - **DSH settings page** (when hub mode is installed): Settings → DSH Crew → "Install to Claude Code"
 - **Command line**: `node src/install/cli.mjs all`
 
-Both do the same thing: register local marketplace (parent directory `dsh-plugins/` as marketplace root) + `claude plugin install` + MCP tool permission allowlist + claude-hud worker status segment config (auto-backup settings.json before changes, idempotent). **Restart the session after installation for changes to take effect.**
+Both do the same thing: register local marketplace (the repo itself, via `.claude-plugin/marketplace.json`) + `claude plugin install` + MCP tool permission allowlist + claude-hud worker status segment config (auto-backup settings.json before changes, idempotent). **Restart the session after installation for changes to take effect.**
 
 ### Usage
 
