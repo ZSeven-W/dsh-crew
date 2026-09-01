@@ -142,12 +142,11 @@ export function uninstallCodex({ home = homedir() } = {}) {
 export async function installClaudeCode({ home = homedir(), statusline = false } = {}) {
   const actions = [];
 
-  // The marketplace root is the PARENT directory (dsh-plugins/): marketplace
-  // plugin sources must be './<subdir>' paths inside the marketplace root, so
-  // the plugin repo itself cannot be its own marketplace and a wrapper
-  // directory elsewhere cannot reference it either.
-  const mpDir = dirname(ROOT);
-  actions.push(`marketplace: ${mpDir} (parent-dir marketplace, source ./dsh-crew)`);
+  // The repo is its own marketplace: .claude-plugin/marketplace.json lists the
+  // plugin with source './'. Pointing at the parent directory instead would
+  // need a manifest written into whatever directory the user cloned into.
+  const mpDir = ROOT;
+  actions.push(`marketplace: ${mpDir} (self-marketplace, source ./)`);
 
   // 2. settings.json: marketplace + enabledPlugins + permissions allowlist.
   const settingsFile = join(home, '.claude', 'settings.json');
@@ -217,7 +216,15 @@ export async function installClaudeCode({ home = homedir(), statusline = false }
     const { execSync } = await import('node:child_process');
     const run = (cmd) => execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 });
     try { run(`claude plugin marketplace add ${JSON.stringify(mpDir)}`); actions.push('cli: marketplace registered'); }
-    catch { actions.push('cli: marketplace add skipped (already registered)'); }
+    catch (err) {
+      // Re-adding an existing marketplace is the expected no-op; anything else
+      // is a real failure (a missing or invalid manifest, say) and must be said
+      // out loud — reporting it as "already registered" hides the cause of the
+      // `plugin install` error that follows.
+      const msg = String(err?.stdout ?? '') + String(err?.stderr ?? '') + String(err?.message ?? err);
+      if (/already/i.test(msg)) actions.push('cli: marketplace add skipped (already registered)');
+      else actions.push(`cli: marketplace add failed — ${msg.replace(/\s+/g, ' ').trim().slice(0, 160)}`);
+    }
     // `plugin install` on an already-installed plugin is a no-op and leaves a
     // stale snapshot in ~/.claude/plugins/cache — uninstall first so an update
     // always re-copies the current code.
