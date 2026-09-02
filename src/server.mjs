@@ -9,6 +9,7 @@ import { startCliJob } from './cli-workers.mjs';
 import { listProfiles, resolveProfile } from './worker-profiles.mjs';
 import { readInheritedOrigin, extendOrigin, DEFAULT_ORIGIN_DEPTH_LIMIT } from './origin-guard.mjs';
 import { acquireCwdLock, releaseCwdLockByJobId, updateCwdLockHolder, getCwdLocks, CwdLockError } from './cwd-lock.mjs';
+import { resolveWorkerCwd } from './paths.mjs';
 
 const server = new McpServer({ name: 'dsh-crew', version: '0.1.0-rc.6' });
 
@@ -142,13 +143,13 @@ server.registerTool('dsh_run_worker', {
     tier: tierSchema,
     effort: effortSchema,
     worker: workerSchema,
-    cwd: z.string().optional().describe('Workspace directory for the worker (defaults to current project)'),
+    cwd: z.string().optional().describe('Workspace directory for the worker. Relative paths resolve against the caller\'s current workspace; "." or "current" mean the current workspace. Omit for the current workspace.'),
     timeout_seconds: z.number().int().positive().max(7200).optional(),
     allow_concurrent_cwd: allowConcurrentCwdSchema,
   },
 }, async ({ task, tier, effort, worker, cwd, timeout_seconds, allow_concurrent_cwd }) => {
   if (!sessionConfig.enabled) return dispatchDisabled();
-  const workDir = cwd ?? process.cwd();
+  const workDir = resolveWorkerCwd(cwd);
   const e = effort ?? sessionConfig.default_effort;
   const timeout = timeout_seconds ?? sessionConfig.default_timeout_seconds;
   const depthLimit = depthLimitNow();
@@ -272,12 +273,12 @@ server.registerTool('dsh_spawn_worker', {
     tier: tierSchema,
     effort: effortSchema,
     worker: workerSchema,
-    cwd: z.string().optional(),
+    cwd: z.string().optional().describe('Workspace directory for the worker. Relative paths resolve against the caller\'s current workspace; "." or "current" mean the current workspace. Omit for the current workspace.'),
     allow_concurrent_cwd: allowConcurrentCwdSchema,
   },
 }, async ({ task, tier, effort, worker, cwd, allow_concurrent_cwd }) => {
   if (!sessionConfig.enabled) return dispatchDisabled();
-  const workDir = cwd ?? process.cwd();
+  const workDir = resolveWorkerCwd(cwd);
   const depthLimit = depthLimitNow();
   if (worker) {
     // CLI profile dispatch; no hub/standalone involvement, no tier policy.

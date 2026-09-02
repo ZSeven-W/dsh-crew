@@ -22,9 +22,10 @@
     "build": "npm run build:client && npm run build:mcp",
     "build:client": "tsdown src/client/index.tsx --format cjs --platform browser --target es2022 --tsconfig tsconfig.client.json --deps.never-bundle react --deps.never-bundle react/jsx-runtime --deps.never-bundle react-dom --deps.never-bundle react-dom/client --out-dir .client-build --clean --logLevel warn && node scripts/build-client.mjs",
     "build:mcp": "node scripts/build-mcp.mjs",
+    "smoke:cwd": "node scripts/smoke-cwd.mjs",
     "smoke:mcp": "node scripts/smoke-bundle.mjs",
     "smoke:pack": "node scripts/smoke-pack.mjs",
-    "prepack": "npm run smoke:mcp",
+    "prepack": "npm run smoke:cwd && npm run smoke:mcp",
     "prepublishOnly": "npm run smoke:mcp"
   },
   "dependencies": {

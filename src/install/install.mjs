@@ -483,14 +483,31 @@ export function installHudSegment({ home = homedir() } = {}) {
   return { ok: true, actions: [...(bak ? [`backup: ${bak}`] : []), 'statusLine: claude-hud now runs worker-segment.sh via --extra-cmd'] };
 }
 
-export function uninstallClaudeCode({ home = homedir() } = {}) {
+/**
+ * Array-form extraKnownMarketplaces entries are keyed objects shaped like
+ * { "dsh-crew": { source: { source: 'directory', path } } } — never arrays
+ * of paths. Match any element that names this marketplace, or whose
+ * directory (source.path, or a top-level path for safety) resolves to the
+ * repo ROOT this installer registers.
+ */
+function isDshMarketplaceEntry(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  if (Object.prototype.hasOwnProperty.call(entry, MARKETPLACE_NAME)) return true;
+  const candidates = [entry, ...Object.values(entry).filter((v) => v && typeof v === 'object')];
+  return candidates.some((v) => {
+    const p = v.path ?? v.source?.path;
+    return typeof p === 'string' && resolve(p) === ROOT;
+  });
+}
+
+export async function uninstallClaudeCode({ home = homedir() } = {}) {
+  const actions = [];
   const settingsFile = join(home, '.claude', 'settings.json');
   const settings = readJson(settingsFile, null);
   if (!settings) return { ok: true, actions: ['settings.json not found'] };
   backup(settingsFile);
-  const mpDir = join(home, '.config', 'dsh-crew', 'marketplace');
   if (Array.isArray(settings.extraKnownMarketplaces)) {
-    settings.extraKnownMarketplaces = settings.extraKnownMarketplaces.filter((m) => m?.path !== mpDir);
+    settings.extraKnownMarketplaces = settings.extraKnownMarketplaces.filter((m) => !isDshMarketplaceEntry(m));
   } else if (settings.extraKnownMarketplaces) {
     delete settings.extraKnownMarketplaces[MARKETPLACE_NAME];
   }
@@ -503,5 +520,37 @@ export function uninstallClaudeCode({ home = homedir() } = {}) {
     settings.permissions.allow = settings.permissions.allow.filter((r) => !r.startsWith('mcp__plugin_dsh-crew_'));
   }
   writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + '\n');
-  return { ok: true, actions: ['unregistered from settings.json (backup kept)'] };
+  actions.push('settings: unregistered from settings.json (backup kept)');
+
+  // Mirror install: the CLI keeps its own plugin state — known_marketplaces
+  // and the cache snapshot in ~/.claude/plugins/ — that rewriting settings
+  // alone never removes, so `claude plugin list` would still show the plugin
+  // as disabled. Best-effort, exactly like install: settings are already
+  // clean, so a missing CLI just leaves the two commands below manual.
+  if (home !== homedir()) {
+    actions.push('cli: skipped (non-default home; test mode)');
+    actions.push('unregistered from settings.json (backup kept)');
+    return { ok: true, actions };
+  }
+  const cliErrors = [];
+  try {
+    const { execSync } = await import('node:child_process');
+    const run = (cmd) => execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 });
+    for (const cmd of ['claude plugin uninstall ' + PLUGIN_KEY, 'claude plugin marketplace remove ' + MARKETPLACE_NAME]) {
+      try { run(cmd); } catch (err) {
+        const msg = String(err?.stdout ?? '') + String(err?.stderr ?? '') + String(err?.message ?? err);
+        cliErrors.push(msg.replace(/\s+/g, ' ').trim().slice(0, 160));
+      }
+    }
+  } catch (err) {
+    cliErrors.push(String(err?.message ?? err).slice(0, 120));
+  }
+  if (cliErrors.length) {
+    actions.push('cli: cleanup failed — run manually: claude plugin uninstall ' + PLUGIN_KEY + '; claude plugin marketplace remove ' + MARKETPLACE_NAME + ' (' + cliErrors.join(' | ') + ')');
+    actions.push('settings.json was cleaned (backup kept) but the Claude Code CLI cleanup failed — run the commands above manually');
+    return { ok: true, actions };
+  }
+  actions.push('cli: uninstalled ' + PLUGIN_KEY + ' and removed marketplace ' + MARKETPLACE_NAME);
+  actions.push('uninstalled from Claude Code CLI and unregistered from settings.json (backup kept)');
+  return { ok: true, actions };
 }

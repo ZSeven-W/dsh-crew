@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { isAbsoluteCwd, canonicalCwd } from '../paths.mjs';
 import { createShardWriter, readMergedStatus } from '../status-shard.mjs';
 import { procAlive, killWorkerProcess, parsePid, ProcKillRefused } from '../proc-kill.mjs';
 
@@ -96,13 +97,17 @@ class WorkerRegistry {
     const model = TIER_MODELS[tier];
     if (!model) throw new Error(`unknown tier "${tier}"`);
     if (!['off', 'high', 'max'].includes(effort)) throw new Error(`unknown effort "${effort}"`);
-    if (!cwd || !cwd.startsWith('/')) throw new Error('cwd must be an absolute path');
+    // Accept POSIX, Windows drive (D:\x, C:/x) and UNC (\\srv\share) roots.
+    if (!isAbsoluteCwd(cwd)) throw new Error('cwd must be an absolute path');
+    // One canonical form for the job, the advisory lock and the workspace
+    // lookup: D:/x and D:\x must map to the same workspace on Windows.
+    const cwdPath = canonicalCwd(cwd);
     await this.ctx.get('loader')?.await();
 
     const id = `hub-${this.nextId++}-${Date.now().toString(36)}`;
     const sessionId = `session-${randomUUID()}`;
     const job = {
-      id, sessionId, tier, model, effort, task, source, cwd,
+      id, sessionId, tier, model, effort, task, source, cwd: cwdPath,
       status: 'running', turn: 0, step: 0, currentTool: null, toolCalls: 0,
       tokens: { input: 0, output: 0, reasoning: 0 },
       startedAt: new Date().toISOString(), endedAt: null,
@@ -150,7 +155,7 @@ class WorkerRegistry {
     const run = async () => {
       const handle = await this.ctx.agents.create({
         sessionId,
-        meta: { cwd, ...(presetId === undefined ? {} : { agentPreset: presetId }) },
+        meta: { cwd: cwdPath, ...(presetId === undefined ? {} : { agentPreset: presetId }) },
         agentOptions: { provider: selection.provider, model: selection.model },
         setup: async (agentCtx) => {
           installModelSelection(agentCtx, { current: selection, assembled: undefined });
@@ -169,11 +174,11 @@ class WorkerRegistry {
         // job cwd never inherits a parent directory's workspace).
         const registry = this.ctx.get('workspaceRegistry');
         if (registry !== undefined) {
-          const ws = (await registry.resolveByPath(cwd)) ?? (await registry.create(cwd));
+          const ws = (await registry.resolveByPath(cwdPath)) ?? (await registry.create(cwdPath));
           await ws.attachSession(sessionId);
         }
       } catch (err) {
-        this.ctx.logger?.warn?.(`dsh-crew: workspace attach failed for ${cwd}: ${err?.message ?? err}`);
+        this.ctx.logger?.warn?.(`dsh-crew: workspace attach failed for ${cwdPath}: ${err?.message ?? err}`);
       }
       await handle.agent.whenIdle();
       handle.agent.followup(userMessage(task));
@@ -519,7 +524,7 @@ export async function apply(ctx) {
           if (target === 'codex') return sendJson(res, 200, installCodex({}));
           if (target === 'agy') return sendJson(res, 200, installAgy({}));
           if (target === 'grok') return sendJson(res, 200, installGrok({}));
-          if (target === 'claude-uninstall') return sendJson(res, 200, uninstallClaudeCode({}));
+          if (target === 'claude-uninstall') return sendJson(res, 200, await uninstallClaudeCode({}));
           if (target === 'codex-uninstall') return sendJson(res, 200, uninstallCodex({}));
           if (target === 'agy-uninstall') return sendJson(res, 200, uninstallAgy({}));
           if (target === 'grok-uninstall') return sendJson(res, 200, uninstallGrok({}));
