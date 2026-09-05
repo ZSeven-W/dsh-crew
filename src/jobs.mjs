@@ -43,10 +43,15 @@ function backendOf(j) { return j.backend ?? 'standalone'; }
 function profileOf(j) { return j.profile ?? null; }
 function modeOf(j) { return j.mode ?? (j.backend ? 'cli' : 'standalone'); }
 
+/** Bounded task preview with a visible truncation marker (PATTERN-AUDIT D3). */
+function clipTask(task, cap = 300) {
+  return task.length > cap ? task.slice(0, cap) + '…' : task;
+}
+
 export function publishStatus() {
   shard.publish([...jobs.values()].map((j) => ({
     id: j.id, tier: j.tier, model: j.model, effort: j.effort, status: j.status, source: j.source,
-    task: j.task.slice(0, 300), cwd: j.cwd, turn: j.turn, step: j.step, toolCalls: j.toolCalls,
+    task: clipTask(j.task), cwd: j.cwd, turn: j.turn, step: j.step, toolCalls: j.toolCalls,
     currentTool: j.currentTool, tokens: j.tokens,
     backend: backendOf(j), profile: profileOf(j), mode: modeOf(j),
     liveness: j.liveness ?? null,
@@ -66,7 +71,7 @@ export function publishStatus() {
 export function jobView(j, { withResult = false } = {}) {
   const v = {
     id: j.id, tier: j.tier, model: j.model, effort: j.effort, status: j.status, source: j.source,
-    task: j.task.slice(0, 300), turn: j.turn, step: j.step, currentTool: j.currentTool,
+    task: clipTask(j.task), turn: j.turn, step: j.step, currentTool: j.currentTool,
     tokens: j.tokens, toolCalls: j.toolCalls,
     backend: backendOf(j), profile: profileOf(j), mode: modeOf(j),
     cwd: j.cwd,

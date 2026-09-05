@@ -213,7 +213,8 @@ node src/install/cli.mjs uninstall-claude
 
 | कमांड | क्या करता है |
 |---|---|
-| `/dsh-crew:config` | इस सेशन के डिफ़ॉल्ट देखें या सेट करें: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<सेकंड>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-crew:config` | इस सेशन के डिफ़ॉल्ट देखें या सेट करें: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<सेकंड>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-crew:on` · `/dsh-crew:off` | इस सेशन में डिस्पैच चालू या बंद करें (बंद एक हार्ड स्विच है: टूल मना कर देता है) |
 | `/dsh-crew:status` | worker jobs की लाइव स्थिति: tier, प्रगति, tokens, मौजूदा टूल |
 | `/dsh-crew:playbook` | डिस्पैच सर्वोत्तम अभ्यास: flash बनाम pro चुनना, आत्मनिर्भर ब्रीफ, समानांतरता, परिणाम सत्यापन, गार्डरेल |
@@ -254,7 +255,8 @@ Codex के लिए तीन prompts इंस्टॉल होते ह�
 
 | कमांड | क्या करता है |
 |---|---|
-| `/dsh-config` | इस सेशन के डिफ़ॉल्ट देखें या सेट करें: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<सेकंड>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-config` | इस सेशन के डिफ़ॉल्ट देखें या सेट करें: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<सेकंड>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-status` | worker jobs की लाइव स्थिति: tier, प्रगति, tokens, मौजूदा टूल |
 | `/dsh-playbook` | डिस्पैच सर्वोत्तम अभ्यास: flash बनाम pro चुनना, आत्मनिर्भर ब्रीफ, समानांतरता, परिणाम सत्यापन, गार्डरेल |
 

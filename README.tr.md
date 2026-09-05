@@ -213,7 +213,8 @@ Genel varsayılanları yalnızca geçerli oturum için geçersiz kılar ve promp
 
 | Komut | Ne yapar |
 |---|---|
-| `/dsh-crew:config` | Oturumun varsayılanlarını göster ya da ayarla: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<saniye>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-crew:config` | Oturumun varsayılanlarını göster ya da ayarla: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<saniye>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-crew:on` · `/dsh-crew:off` | Bu oturumda dağıtımı aç ya da kapat (kapalı sert bir anahtardır: araç reddeder) |
 | `/dsh-crew:status` | Worker işlerinin canlı durumu: tier, ilerleme, token, geçerli araç |
 | `/dsh-crew:playbook` | Gönderim en iyi uygulamaları: flash ve pro seçimi, kendi kendine yeten brifingler, paralellik, sonuçları doğrulama, koruma korkulukları |
@@ -254,7 +255,8 @@ Codex için üç prompt kurulur:
 
 | Komut | Ne yapar |
 |---|---|
-| `/dsh-config` | Oturumun varsayılanlarını göster ya da ayarla: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<saniye>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-config` | Oturumun varsayılanlarını göster ya da ayarla: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<saniye>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-status` | Worker işlerinin canlı durumu: tier, ilerleme, token, geçerli araç |
 | `/dsh-playbook` | Gönderim en iyi uygulamaları: flash ve pro seçimi, kendi kendine yeten brifingler, paralellik, sonuçları doğrulama, koruma korkulukları |
 

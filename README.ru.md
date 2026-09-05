@@ -213,7 +213,8 @@ node src/install/cli.mjs uninstall-claude
 
 | Команда | Что делает |
 |---|---|
-| `/dsh-crew:config` | Показать или задать значения по умолчанию для сессии: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<секунды>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-crew:config` | Показать или задать значения по умолчанию для сессии: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<секунды>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-crew:on` · `/dsh-crew:off` | Включить или выключить диспетчеризацию в этой сессии (выключено — жёсткий запрет: инструмент отказывает) |
 | `/dsh-crew:status` | Статус worker-задач в реальном времени: tier, прогресс, токены, текущий инструмент |
 | `/dsh-crew:playbook` | Лучшие практики диспетчеризации: выбор flash или pro, самодостаточные задания, параллелизм, проверка результатов, ограждения |
@@ -254,7 +255,8 @@ cp codex/agents/*.toml ~/.codex/agents/    # global or project-level .codex/agen
 
 | Команда | Что делает |
 |---|---|
-| `/dsh-config` | Показать или задать значения по умолчанию для сессии: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<секунды>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-config` | Показать или задать значения по умолчанию для сессии: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<секунды>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-status` | Статус worker-задач в реальном времени: tier, прогресс, токены, текущий инструмент |
 | `/dsh-playbook` | Лучшие практики диспетчеризации: выбор flash или pro, самодостаточные задания, параллелизм, проверка результатов, ограждения |
 

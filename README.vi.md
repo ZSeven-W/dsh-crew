@@ -213,7 +213,8 @@ Chỉ ghi đè giá trị mặc định toàn cục cho phiên hiện tại, và
 
 | Lệnh | Tác dụng |
 |---|---|
-| `/dsh-crew:config` | Xem hoặc đặt mặc định của phiên: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<giây>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-crew:config` | Xem hoặc đặt mặc định của phiên: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<giây>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-crew:on` · `/dsh-crew:off` | Bật hoặc tắt dispatch cho phiên này (tắt là công tắc cứng: công cụ sẽ từ chối) |
 | `/dsh-crew:status` | Trạng thái trực tiếp của job worker: tier, tiến độ, token, công cụ hiện tại |
 | `/dsh-crew:playbook` | Thực hành điều phối tốt nhất: chọn flash hay pro, bản mô tả khép kín, song song hóa, xác minh kết quả, guardrail |
@@ -254,7 +255,8 @@ Phía Codex cài ba prompt tương ứng:
 
 | Lệnh | Tác dụng |
 |---|---|
-| `/dsh-config` | Xem hoặc đặt mặc định của phiên: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<giây>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-config` | Xem hoặc đặt mặc định của phiên: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<giây>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-status` | Trạng thái trực tiếp của job worker: tier, tiến độ, token, công cụ hiện tại |
 | `/dsh-playbook` | Thực hành điều phối tốt nhất: chọn flash hay pro, bản mô tả khép kín, song song hóa, xác minh kết quả, guardrail |
 

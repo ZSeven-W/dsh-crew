@@ -213,7 +213,7 @@ node src/install/cli.mjs uninstall-claude
 
 | コマンド | 動作 |
 |---|---|
-| `/dsh-crew:config` | このセッションの既定値を表示・設定: `tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`reset` |
+| `/dsh-crew:config` | このセッションの既定値を表示・設定: `tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`origin_depth_limit=<1-32>`、`preset_flash/preset_pro=<preset id|default>`、`reset` |
 | `/dsh-crew:on` · `/dsh-crew:off` | このセッションのディスパッチを有効／無効にする（無効はハードスイッチでツールが拒否） |
 | `/dsh-crew:status` | worker ジョブの実況: tier、進捗、トークン、実行中のツール |
 | `/dsh-crew:playbook` | ディスパッチのベストプラクティス: flash と pro の選び方、自己完結型のブリーフ、並列実行、結果の検証、ガードレール |
@@ -254,7 +254,7 @@ Codex 側には 3 つのプロンプトが入ります:
 
 | コマンド | 動作 |
 |---|---|
-| `/dsh-config` | このセッションの既定値を表示・設定: `tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`reset` |
+| `/dsh-config` | このセッションの既定値を表示・設定: `tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`origin_depth_limit=<1-32>`、`preset_flash/preset_pro=<preset id|default>`、`reset` |
 | `/dsh-status` | worker ジョブの実況: tier、進捗、トークン、実行中のツール |
 | `/dsh-playbook` | ディスパッチのベストプラクティス: flash と pro の選び方、自己完結型のブリーフ、並列実行、結果の検証、ガードレール |
 

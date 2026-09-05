@@ -213,7 +213,8 @@ node src/install/cli.mjs uninstall-claude
 
 | คำสั่ง | ทำอะไร |
 |---|---|
-| `/dsh-crew:config` | ดูหรือตั้งค่าเริ่มต้นของเซสชัน: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<วินาที>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-crew:config` | ดูหรือตั้งค่าเริ่มต้นของเซสชัน: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<วินาที>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-crew:on` · `/dsh-crew:off` | เปิดหรือปิดการ dispatch ของเซสชันนี้ (ปิดคือสวิตช์แข็ง เครื่องมือจะปฏิเสธ) |
 | `/dsh-crew:status` | สถานะสดของงาน worker: tier ความคืบหน้า tokens และเครื่องมือปัจจุบัน |
 | `/dsh-crew:playbook` | แนวปฏิบัติที่ดีที่สุดในการ dispatch: การเลือก flash vs pro, บรีฟที่ครบถ้วนในตัวเอง, การทำงานแบบขนาน, การตรวจสอบผลลัพธ์, ราวกันตก |
@@ -254,7 +255,8 @@ cp codex/agents/*.toml ~/.codex/agents/    # global or project-level .codex/agen
 
 | คำสั่ง | ทำอะไร |
 |---|---|
-| `/dsh-config` | ดูหรือตั้งค่าเริ่มต้นของเซสชัน: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<วินาที>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-config` | ดูหรือตั้งค่าเริ่มต้นของเซสชัน: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<วินาที>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-status` | สถานะสดของงาน worker: tier ความคืบหน้า tokens และเครื่องมือปัจจุบัน |
 | `/dsh-playbook` | แนวปฏิบัติที่ดีที่สุดในการ dispatch: การเลือก flash vs pro, บรีฟที่ครบถ้วนในตัวเอง, การทำงานแบบขนาน, การตรวจสอบผลลัพธ์, ราวกันตก |
 

@@ -213,7 +213,8 @@ These override the global defaults for the current session only, and are enforce
 
 | Command | What it does |
 |---|---|
-| `/dsh-crew:config` | Show or set this session's defaults: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<seconds>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-crew:config` | Show or set this session's defaults: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<seconds>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-crew:on` · `/dsh-crew:off` | Turn dispatch for this session on or off (off is a hard switch: the tool refuses) |
 | `/dsh-crew:status` | Live status of worker jobs: tier, progress, tokens, current tool |
 | `/dsh-crew:playbook` | Dispatch best practices: choosing flash vs pro, self-contained briefs, parallelism, verifying results, guardrails |
@@ -254,7 +255,8 @@ Three prompts are installed for Codex:
 
 | Command | What it does |
 |---|---|
-| `/dsh-config` | Show or set this session's defaults: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<seconds>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-config` | Show or set this session's defaults: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<seconds>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-status` | Live status of worker jobs: tier, progress, tokens, current tool |
 | `/dsh-playbook` | Dispatch best practices: choosing flash vs pro, self-contained briefs, parallelism, verifying results, guardrails |
 

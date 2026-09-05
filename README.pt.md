@@ -213,7 +213,8 @@ Substituem os padrões globais apenas na sessão atual e são aplicados na camad
 
 | Comando | O que faz |
 |---|---|
-| `/dsh-crew:config` | Mostrar ou definir os padrões da sessão: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<segundos>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-crew:config` | Mostrar ou definir os padrões da sessão: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<segundos>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-crew:on` · `/dsh-crew:off` | Ligar ou desligar o despacho nesta sessão (desligado é chave rígida: a ferramenta recusa) |
 | `/dsh-crew:status` | Status ao vivo dos jobs de worker: tier, progresso, tokens, ferramenta atual |
 | `/dsh-crew:playbook` | Boas práticas de despacho: escolher flash vs pro, briefs autocontidos, paralelismo, verificação de resultados, proteções |
@@ -254,7 +255,8 @@ Três prompts são instalados para o Codex:
 
 | Comando | O que faz |
 |---|---|
-| `/dsh-config` | Mostrar ou definir os padrões da sessão: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<segundos>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-config` | Mostrar ou definir os padrões da sessão: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<segundos>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-status` | Status ao vivo dos jobs de worker: tier, progresso, tokens, ferramenta atual |
 | `/dsh-playbook` | Boas práticas de despacho: escolher flash vs pro, briefs autocontidos, paralelismo, verificação de resultados, proteções |
 

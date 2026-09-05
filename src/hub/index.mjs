@@ -66,6 +66,12 @@ const CONFIG_DIR = join(homedir(), '.config', 'dsh-crew');
 
 // ---------- job registry ----------
 
+/** Bounded task preview with a visible truncation marker (PATTERN-AUDIT D3:
+// a silently truncated task reads like the whole brief in status views). */
+function clipTask(task, cap = 300) {
+  return task.length > cap ? task.slice(0, cap) + '…' : task;
+}
+
 class WorkerRegistry {
   constructor(ctx) {
     this.ctx = ctx;
@@ -77,7 +83,7 @@ class WorkerRegistry {
   view(job, withResult = false) {
     const v = {
       id: job.id, sessionId: job.sessionId, tier: job.tier, model: job.model,
-      effort: job.effort, status: job.status, source: job.source, task: job.task.slice(0, 300),
+      effort: job.effort, status: job.status, source: job.source, task: clipTask(job.task),
       cwd: job.cwd, turn: job.turn, step: job.step, currentTool: job.currentTool,
       toolCalls: job.toolCalls, tokens: job.tokens, mode: 'hub',
       startedAt: job.startedAt, endedAt: job.endedAt,
@@ -272,6 +278,21 @@ function adoptLang(value) {
   if (value === 'zh' || value === 'en') setLang(value);
 }
 
+/**
+ * `?wait` as a non-negative integer second count. Absent/empty means 0;
+ * anything non-numeric, fractional or negative is null (HTTP 400) — a
+ * garbage wait must be an error, never a silent no-wait (PATTERN-AUDIT D2:
+ * `?wait=abc` used to return immediately with 200 OK because
+ * Math.min(NaN, 600) is NaN and the wait promise resolved instantly).
+ */
+export function parseWaitSeconds(value) {
+  if (value === undefined || value === null || value === '') return 0;
+  if (!/^\d+$/.test(String(value))) return null;
+  const n = Number(value);
+  if (!Number.isSafeInteger(n)) return null;
+  return n;
+}
+
 async function readBody(req, limit = 64 * 1024) {
   let body = '';
   for await (const chunk of req) {
@@ -390,7 +411,8 @@ export async function apply(ctx) {
             return sendJson(res, 200, { ok: true, jobs: [...own, ...foreign] });
           }
           if (req.method === 'GET' && parts.length === 1) {
-            const wait = Number(url.searchParams.get('wait') ?? 0);
+            const wait = parseWaitSeconds(url.searchParams.get('wait'));
+            if (wait === null) return sendJson(res, 400, { ok: false, error: 'wait must be a non-negative integer number of seconds' });
             const job = await hub.wait(parts[0], Math.min(wait, 600) * 1000);
             if (!job) return sendJson(res, 404, { ok: false, error: 'no such job' });
             return sendJson(res, 200, { ok: true, job: hub.view(job, true) });

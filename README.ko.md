@@ -213,7 +213,8 @@ node src/install/cli.mjs uninstall-claude
 
 | 명령 | 동작 |
 |---|---|
-| `/dsh-crew:config` | 이 세션의 기본값 조회·설정: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<초>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-crew:config` | 이 세션의 기본값 조회·설정: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<초>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-crew:on` · `/dsh-crew:off` | 이 세션의 디스패치 켜기·끄기 (끄기는 하드 스위치로 도구가 거부) |
 | `/dsh-crew:status` | worker 작업 실시간 상태: tier, 진행, 토큰, 현재 도구 |
 | `/dsh-crew:playbook` | 디스패치 모범 사례: flash vs pro 선택, 자기 완결적인 브리프, 병렬 처리, 결과 검증, 가드레일 |
@@ -254,7 +255,8 @@ Codex에는 세 개의 프롬프트가 설치됩니다:
 
 | 명령 | 동작 |
 |---|---|
-| `/dsh-config` | 이 세션의 기본값 조회·설정: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<초>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-config` | 이 세션의 기본값 조회·설정: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<초>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-status` | worker 작업 실시간 상태: tier, 진행, 토큰, 현재 도구 |
 | `/dsh-playbook` | 디스패치 모범 사례: flash vs pro 선택, 자기 완결적인 브리프, 병렬 처리, 결과 검증, 가드레일 |
 

@@ -26,7 +26,8 @@
     "smoke:mcp": "node scripts/smoke-bundle.mjs",
     "smoke:pack": "node scripts/smoke-pack.mjs",
     "prepack": "npm run smoke:cwd && npm run smoke:mcp",
-    "prepublishOnly": "npm run smoke:mcp"
+    "prepublishOnly": "npm run smoke:mcp",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.5",

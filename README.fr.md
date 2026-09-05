@@ -213,7 +213,8 @@ Elles ne remplacent les valeurs globales que pour la session courante, et sont a
 
 | Commande | Effet |
 |---|---|
-| `/dsh-crew:config` | Afficher ou définir les valeurs par défaut de la session : `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<secondes>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-crew:config` | Afficher ou définir les valeurs par défaut de la session : `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<secondes>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-crew:on` · `/dsh-crew:off` | Activer ou désactiver la répartition pour cette session (désactivé = interrupteur strict, l'outil refuse) |
 | `/dsh-crew:status` | État en direct des jobs worker : tier, progression, tokens, outil courant |
 | `/dsh-crew:playbook` | Bonnes pratiques d'envoi : choisir flash ou pro, briefs autonomes, parallélisme, vérification des résultats, garde-fous |
@@ -254,7 +255,8 @@ Trois prompts sont installés pour Codex :
 
 | Commande | Effet |
 |---|---|
-| `/dsh-config` | Afficher ou définir les valeurs par défaut de la session : `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<secondes>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-config` | Afficher ou définir les valeurs par défaut de la session : `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<secondes>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-status` | État en direct des jobs worker : tier, progression, tokens, outil courant |
 | `/dsh-playbook` | Bonnes pratiques d'envoi : choisir flash ou pro, briefs autonomes, parallélisme, vérification des résultats, garde-fous |
 

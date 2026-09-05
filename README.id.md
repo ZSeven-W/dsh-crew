@@ -213,7 +213,8 @@ Hanya menimpa nilai default global untuk sesi saat ini, dan ditegakkan di lapisa
 
 | Perintah | Fungsinya |
 |---|---|
-| `/dsh-crew:config` | Tampilkan atau setel default sesi: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<detik>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-crew:config` | Tampilkan atau setel default sesi: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<detik>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-crew:on` · `/dsh-crew:off` | Nyalakan atau matikan dispatch untuk sesi ini (mati adalah saklar keras: tool menolak) |
 | `/dsh-crew:status` | Status langsung job worker: tier, progres, token, tool saat ini |
 | `/dsh-crew:playbook` | Praktik terbaik dispatch: memilih flash vs pro, brief yang mandiri, paralelisme, memverifikasi hasil, pagar pembatas |
@@ -254,7 +255,8 @@ Untuk Codex dipasang tiga prompt:
 
 | Perintah | Fungsinya |
 |---|---|
-| `/dsh-config` | Tampilkan atau setel default sesi: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<detik>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-config` | Tampilkan atau setel default sesi: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<detik>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-status` | Status langsung job worker: tier, progres, token, tool saat ini |
 | `/dsh-playbook` | Praktik terbaik dispatch: memilih flash vs pro, brief yang mandiri, paralelisme, memverifikasi hasil, pagar pembatas |
 

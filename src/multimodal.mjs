@@ -336,6 +336,7 @@ async function generateViaAgy(prompt, outputPath) {
   const p = `Use ONLY your native generate_image tool — do not run shell commands or any other tools. Generate: ${prompt}. Save the file with a name containing ${nonce}. Reply with the saved path.`;
   await run('agy', ['-p', p], { timeoutMs: 480_000 });
   const root = join(homedir(), '.gemini', 'antigravity-cli');
+  let fresh = 0;
   let found;
   try {
     for (const f of readdirSync(root, { recursive: true })) {
@@ -344,11 +345,19 @@ async function generateViaAgy(prompt, outputPath) {
       const p2 = join(root, name);
       const t = statSync(p2).mtimeMs;
       if (Date.now() - t > 8 * 60_000) continue;
+      fresh += 1;
+      // Only a nonce match is evidence the file answers THIS prompt. Falling
+      // back to "the freshest image around" once shipped an unrelated file as
+      // a successful generation (PATTERN-AUDIT D1) — an unverified match must
+      // not be reported as success.
       if (name.includes(nonce)) { found = p2; break; }
-      if (!found || t > statSync(found).mtimeMs) found = p2;
     }
   } catch {}
-  if (!found) throw new Error('agy reported success but no fresh image was found under ~/.gemini/antigravity-cli');
+  if (!found) {
+    throw new Error(
+      `agy finished but no saved image carries the nonce (${nonce}) under ~/.gemini/antigravity-cli` +
+      (fresh > 0 ? ` — ${fresh} fresh image(s) were found but none verifiably answers this prompt; inspect them manually before trusting any` : ''));
+  }
   copyFileSync(found, outputPath);
   return outputPath;
 }

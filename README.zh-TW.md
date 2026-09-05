@@ -213,7 +213,7 @@ node src/install/cli.mjs uninstall-claude
 
 | 命令 | 作用 |
 |---|---|
-| `/dsh-crew:config` | 檢視或設定本階段預設值：`tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`reset` |
+| `/dsh-crew:config` | 檢視或設定本階段預設值：`tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`origin_depth_limit=<1-32>`、`preset_flash/preset_pro=<preset id|default>`、`reset` |
 | `/dsh-crew:on` · `/dsh-crew:off` | 開關本階段的分派（關閉是硬開關，工具層直接拒絕） |
 | `/dsh-crew:status` | worker 任務即時狀態：tier、進度、tokens、目前工具 |
 | `/dsh-crew:playbook` | 分派最佳實踐：flash vs pro 選擇、自包含任務簡報、平行、結果驗證、護欄 |
@@ -254,7 +254,7 @@ Codex 端裝的是三條 prompt：
 
 | 命令 | 作用 |
 |---|---|
-| `/dsh-config` | 檢視或設定本階段預設值：`tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`reset` |
+| `/dsh-config` | 檢視或設定本階段預設值：`tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`origin_depth_limit=<1-32>`、`preset_flash/preset_pro=<preset id|default>`、`reset` |
 | `/dsh-status` | worker 任務即時狀態：tier、進度、tokens、目前工具 |
 | `/dsh-playbook` | 分派最佳實踐：flash vs pro 選擇、自包含任務簡報、平行、結果驗證、護欄 |
 

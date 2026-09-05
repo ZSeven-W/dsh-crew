@@ -213,7 +213,7 @@ node src/install/cli.mjs uninstall-claude
 
 | 命令 | 作用 |
 |---|---|
-| `/dsh-crew:config` | 查看或设置本会话默认值：`tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`reset` |
+| `/dsh-crew:config` | 查看或设置本会话默认值：`tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`origin_depth_limit=<1-32>`、`preset_flash/preset_pro=<preset id|default>`、`reset` |
 | `/dsh-crew:on` · `/dsh-crew:off` | 开关本会话的派发（关闭是硬开关，工具层直接拒绝） |
 | `/dsh-crew:status` | worker 任务实时状态：档位、进度、tokens、当前工具 |
 | `/dsh-crew:playbook` | 派发最佳实践：flash vs pro 选择、自包含任务简报、并行、结果验证、护栏 |
@@ -254,7 +254,7 @@ Codex 侧装的是三条 prompt：
 
 | 命令 | 作用 |
 |---|---|
-| `/dsh-config` | 查看或设置本会话默认值：`tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`reset` |
+| `/dsh-config` | 查看或设置本会话默认值：`tier=flash\|pro`、`effort=off\|high\|max`、`mode=auto\|hub\|standalone`、`timeout=<秒>`、`policy=auto\|flash-only\|pro-only`、`escalate=true\|false`、`origin_depth_limit=<1-32>`、`preset_flash/preset_pro=<preset id|default>`、`reset` |
 | `/dsh-status` | worker 任务实时状态：档位、进度、tokens、当前工具 |
 | `/dsh-playbook` | 派发最佳实践：flash vs pro 选择、自包含任务简报、并行、结果验证、护栏 |
 

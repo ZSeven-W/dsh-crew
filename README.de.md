@@ -213,7 +213,8 @@ Sie überschreiben die globalen Vorgaben nur für die aktuelle Sitzung und werde
 
 | Befehl | Wirkung |
 |---|---|
-| `/dsh-crew:config` | Vorgaben der Sitzung anzeigen oder setzen: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<Sekunden>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-crew:config` | Vorgaben der Sitzung anzeigen oder setzen: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<Sekunden>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-crew:on` · `/dsh-crew:off` | Dispatch für diese Sitzung ein- oder ausschalten (aus ist ein harter Schalter: das Tool verweigert) |
 | `/dsh-crew:status` | Live-Status der Worker-Jobs: Tier, Fortschritt, Tokens, aktuelles Tool |
 | `/dsh-crew:playbook` | Dispatch-Best-Practices: die Wahl zwischen flash und pro, eigenständige Briefings, Parallelität, Verifizieren von Ergebnissen, Leitplanken |
@@ -254,7 +255,8 @@ Für Codex werden drei Prompts installiert:
 
 | Befehl | Wirkung |
 |---|---|
-| `/dsh-config` | Vorgaben der Sitzung anzeigen oder setzen: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<Sekunden>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `reset` |
+| `/dsh-config` | Vorgaben der Sitzung anzeigen oder setzen: `tier=flash\|pro`, `effort=off\|high\|max`, `mode=auto\|hub\|standalone`, `timeout=<Sekunden>`, `policy=auto\|flash-only\|pro-only`, `escalate=true\|false`, `origin_depth_limit=<1-32>`, `preset_flash/preset_pro=<preset id|default>`, `reset` |
+
 | `/dsh-status` | Live-Status der Worker-Jobs: Tier, Fortschritt, Tokens, aktuelles Tool |
 | `/dsh-playbook` | Dispatch-Best-Practices: die Wahl zwischen flash und pro, eigenständige Briefings, Parallelität, Verifizieren von Ergebnissen, Leitplanken |
 
