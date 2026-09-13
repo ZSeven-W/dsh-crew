@@ -413,7 +413,7 @@ dispatch를 *잘* 하는 방법 — flash vs pro 선택, 자기 완결적인 브
   - `POST/GET /_dsh/dsh-crew/jobs`: 작업 생성, 목록, long-poll 결과, 취소
   - `GET /_dsh/dsh-crew/ping`: health check(MCP shim이 hub 실행 여부를 감지하는 데 사용)
   - `POST /_dsh/dsh-crew/install`: 호스트 통합 원클릭 설치 — Claude Code / Codex / Antigravity / Grok(`src/install/`의 backend)
-- **자동 감지**: 호스트들의 MCP shim이 hub를 자동 감지합니다(`DSH_CREW_HUB` 환경 변수, 기본값 `http://127.0.0.1:3080`)
+- **자동 감지**: 호스트들의 MCP shim이 hub를 자동 감지합니다(`DSHPLUGIN_CREW_HUB` 환경 변수, 기본값 `http://127.0.0.1:3080`)
   - DSH Web 실행 중 → job이 hub mode로 실행됩니다(`mode: "hub"`)
   - 실행 중이 아님 → standalone runtime으로 폴백합니다
 

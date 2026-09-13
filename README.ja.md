@@ -411,7 +411,7 @@ node src/install/cli.mjs grok
   - `POST/GET /_dsh/dsh-crew/jobs`: タスクの起動、一覧、結果のロングポーリング、キャンセル
   - `GET /_dsh/dsh-crew/ping`: ヘルスチェック (MCP shim が hub の稼働検知に使用)
   - `POST /_dsh/dsh-crew/install`: ホスト連携のワンクリックインストール — Claude Code / Codex / Antigravity / Grok (`src/install/` のバックエンド)
-- **自動検出**: ホスト側の MCP shim が hub を自動検出します (`DSH_CREW_HUB` 環境変数、デフォルト `http://127.0.0.1:3080`)
+- **自動検出**: ホスト側の MCP shim が hub を自動検出します (`DSHPLUGIN_CREW_HUB` 環境変数、デフォルト `http://127.0.0.1:3080`)
   - DSH Web が稼働中 → ジョブは hub モードで実行されます (`mode: "hub"`)
   - 未稼働 → standalone ランタイムにフォールバックします
 

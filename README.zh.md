@@ -411,7 +411,7 @@ node src/install/cli.mjs grok
   - `POST/GET /_dsh/dsh-crew/jobs`：spawn 任务、列表、长轮询结果、cancel
   - `GET /_dsh/dsh-crew/ping`：健康探测（MCP shim 靠它判断 hub 是否在跑）
   - `POST /_dsh/dsh-crew/install`：一键安装宿主集成——Claude Code / Codex / Antigravity / Grok（即 `src/install/` 的后端）
-- **自动探测**：各宿主的 MCP shim 自动探测 hub（`DSH_CREW_HUB` 环境变量，默认 `http://127.0.0.1:3080`）
+- **自动探测**：各宿主的 MCP shim 自动探测 hub（`DSHPLUGIN_CREW_HUB` 环境变量，默认 `http://127.0.0.1:3080`）
   - DSH Web 在跑 → job 进 hub 模式（`mode: "hub"`）
   - 没跑 → 回落 standalone runtime
 

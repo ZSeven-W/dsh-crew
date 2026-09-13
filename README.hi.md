@@ -413,7 +413,7 @@ node src/install/cli.mjs grok
   - `POST/GET /_dsh/dsh-crew/jobs`: कार्य भेजें, सूची, लंबे-पोल परिणाम, रद्द करें
   - `GET /_dsh/dsh-crew/ping`: स्वास्थ्य जांच (MCP shim यह निर्धारित करने के लिए उपयोग करता है कि hub चल रहा है या नहीं)
   - `POST /_dsh/dsh-crew/install`: host इंटीग्रेशन की वन-क्लिक इंस्टॉल — Claude Code / Codex / Antigravity / Grok (`src/install/` का बैकएंड)
-- **ऑटो-डिटेक्शन**: hosts का MCP shim ऑटो-डिटेक्ट hub करता है (`DSH_CREW_HUB` env var, डिफ़ॉल्ट `http://127.0.0.1:3080`)
+- **ऑटो-डिटेक्शन**: hosts का MCP shim ऑटो-डिटेक्ट hub करता है (`DSHPLUGIN_CREW_HUB` env var, डिफ़ॉल्ट `http://127.0.0.1:3080`)
   - DSH Web चल रहा है → job hub मोड में प्रवेश करते हैं (`mode: "hub"`)
   - चल नहीं रहा है → स्टैंडअलोन रनटाइम पर वापस आएं
 

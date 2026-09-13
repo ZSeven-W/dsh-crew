@@ -6,7 +6,7 @@ import { hubAvailable, hub } from '../src/hub-client.mjs';
 import { readGlobalConfig } from '../src/install/install.mjs';
 
 try {
-  const hubUrl = process.env.DSH_CREW_HUB ?? readGlobalConfig().hub_url;
+  const hubUrl = process.env.DSHPLUGIN_CREW_HUB ?? process.env.DSH_CREW_HUB ?? readGlobalConfig().hub_url;
   const isHubUp = await hubAvailable();
 
   if (isHubUp) {

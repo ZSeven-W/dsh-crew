@@ -413,7 +413,7 @@ Bu paket aynı zamanda geçerli bir DSH bundle'ıdır (`dsh.bundle` + `cordis.pa
   - `POST/GET /_dsh/dsh-crew/jobs`: görev başlatma, listeleme, sonuçları long-poll ile bekleme, iptal
   - `GET /_dsh/dsh-crew/ping`: sağlık kontrolü (MCP shim, hub'ın çalışıp çalışmadığını anlamak için bunu kullanır)
   - `POST /_dsh/dsh-crew/install`: host entegrasyonlarının tek tıkla kurulumu — Claude Code / Codex / Antigravity / Grok (`src/install/` arka ucu)
-- **Otomatik algılama**: Host'ların MCP shim'i hub'ı otomatik algılar (`DSH_CREW_HUB` ortam değişkeni, varsayılan `http://127.0.0.1:3080`)
+- **Otomatik algılama**: Host'ların MCP shim'i hub'ı otomatik algılar (`DSHPLUGIN_CREW_HUB` ortam değişkeni, varsayılan `http://127.0.0.1:3080`)
   - DSH Web çalışıyorsa → işler hub moduna girer (`mode: "hub"`)
   - Çalışmıyorsa → standalone runtime'a geri döner
 

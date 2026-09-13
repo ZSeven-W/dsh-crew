@@ -413,7 +413,7 @@ Ce package est aussi un bundle DSH valide (`dsh.bundle` + `cordis.patch.yml`). A
   - `POST/GET /_dsh/dsh-crew/jobs` : lancer des tâches, lister, long-poll des résultats, annuler
   - `GET /_dsh/dsh-crew/ping` : health check (le shim MCP l'utilise pour détecter si le hub fonctionne)
   - `POST /_dsh/dsh-crew/install` : installation en un clic des intégrations hôte — Claude Code / Codex / Antigravity / Grok (backend de `src/install/`)
-- **Détection automatique** : le shim MCP des hôtes détecte automatiquement le hub (variable d'environnement `DSH_CREW_HUB`, défaut `http://127.0.0.1:3080`)
+- **Détection automatique** : le shim MCP des hôtes détecte automatiquement le hub (variable d'environnement `DSHPLUGIN_CREW_HUB`, défaut `http://127.0.0.1:3080`)
   - DSH Web actif → les jobs passent en mode hub (`mode: "hub"`)
   - Non actif → repli sur le runtime standalone
 

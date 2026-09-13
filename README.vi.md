@@ -413,7 +413,7 @@ Gói này cũng là một DSH bundle hợp lệ (`dsh.bundle` + `cordis.patch.ym
   - `POST/GET /_dsh/dsh-crew/jobs`: tạo tác vụ, liệt kê, long-poll kết quả, hủy
   - `GET /_dsh/dsh-crew/ping`: kiểm tra sức khỏe (MCP shim dùng nó để phát hiện hub có đang chạy không)
   - `POST /_dsh/dsh-crew/install`: cài đặt tích hợp host một cú nhấp — Claude Code / Codex / Antigravity / Grok (backend của `src/install/`)
-- **Tự động phát hiện**: MCP shim của các host tự động phát hiện hub (biến env `DSH_CREW_HUB`, mặc định `http://127.0.0.1:3080`)
+- **Tự động phát hiện**: MCP shim của các host tự động phát hiện hub (biến env `DSHPLUGIN_CREW_HUB`, mặc định `http://127.0.0.1:3080`)
   - DSH Web đang chạy → job vào hub mode (`mode: "hub"`)
   - Không chạy → rơi về standalone runtime
 

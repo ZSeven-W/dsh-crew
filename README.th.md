@@ -413,7 +413,7 @@ node src/install/cli.mjs grok
   - `POST/GET /_dsh/dsh-crew/jobs`: สร้างงาน แสดงรายการ long-poll ผลลัพธ์ ยกเลิก
   - `GET /_dsh/dsh-crew/ping`: ตรวจสุขภาพ (MCP shim ใช้ endpoint นี้ตรวจจับว่า hub ทำงานอยู่หรือไม่)
   - `POST /_dsh/dsh-crew/install`: ติดตั้งการเชื่อมต่อของโฮสต์ — Claude Code / Codex / Antigravity / Grok ในคลิกเดียว (backend ของ `src/install/`)
-- **การตรวจจับอัตโนมัติ**: MCP shim ของโฮสต์ต่างๆ ตรวจจับ hub โดยอัตโนมัติ (env var `DSH_CREW_HUB` ค่าเริ่มต้น `http://127.0.0.1:3080`)
+- **การตรวจจับอัตโนมัติ**: MCP shim ของโฮสต์ต่างๆ ตรวจจับ hub โดยอัตโนมัติ (env var `DSHPLUGIN_CREW_HUB` ค่าเริ่มต้น `http://127.0.0.1:3080`)
   - DSH Web ทำงานอยู่ → jobs เข้าสู่โหมด hub (`mode: "hub"`)
   - ไม่ได้ทำงานอยู่ → fallback ไปยัง runtime แบบ standalone
 

@@ -3,8 +3,9 @@
 // Web UI); otherwise the MCP server falls back to standalone runtimes.
 
 import { readGlobalConfig } from './install/install.mjs';
+import { pluginEnv } from './plugin-env.mjs';
 
-const BASE = (process.env.DSH_CREW_HUB ?? readGlobalConfig().hub_url).replace(/\/$/, '');
+const BASE = (pluginEnv('CREW_HUB') ?? readGlobalConfig().hub_url).replace(/\/$/, '');
 const API = `${BASE}/_dsh/dsh-crew`;
 
 let lastProbe = { at: 0, ok: false };
