@@ -61,7 +61,10 @@ function seedLangFromHost(ctx) {
 import { setLang } from '../i18n.mjs';
 
 const ROUTE_BASE = '/_dsh/dsh-crew';
-const TIER_MODELS = { flash: 'deepseek-v4-flash', pro: 'deepseek-v4-pro' };
+// Tier -> {provider, model}. The defaults live in tier-binding.mjs; the
+// caller may override per dispatch, and the hub's own config is the fallback
+// when it does not (the same shape the preset lookup below uses).
+import { describeBindings, resolveTierBinding, TIERS } from '../tier-binding.mjs';
 const CONFIG_DIR = join(homedir(), '.config', 'dsh-crew');
 
 // ---------- job registry ----------
@@ -82,7 +85,7 @@ class WorkerRegistry {
 
   view(job, withResult = false) {
     const v = {
-      id: job.id, sessionId: job.sessionId, tier: job.tier, model: job.model,
+      id: job.id, sessionId: job.sessionId, tier: job.tier, model: job.model, provider: job.provider,
       effort: job.effort, status: job.status, source: job.source, task: clipTask(job.task),
       cwd: job.cwd, turn: job.turn, step: job.step, currentTool: job.currentTool,
       toolCalls: job.toolCalls, tokens: job.tokens, mode: 'hub',
@@ -99,9 +102,14 @@ class WorkerRegistry {
     this.shard.publish([...this.jobs.values()].map((j) => this.view(j)));
   }
 
-  async spawn({ task, tier = 'flash', effort = 'max', cwd, source = 'api', provider = 'deepseek-official', preset }) {
-    const model = TIER_MODELS[tier];
-    if (!model) throw new Error(`unknown tier "${tier}"`);
+  async spawn({ task, tier = 'flash', effort = 'max', cwd, source = 'api', provider, model, preset }) {
+    if (!TIERS.includes(tier)) throw new Error(`unknown tier "${tier}"`);
+    // An explicit {provider, model} from the caller wins (the MCP process owns
+    // session-level overrides, exactly as it does for presets); otherwise the
+    // hub's own stored config decides, and failing that the tier default.
+    const bound = resolveTierBinding(tier, this.getConfig?.() ?? {});
+    const resolvedProvider = typeof provider === 'string' && provider.trim() !== '' ? provider.trim() : bound.provider;
+    const resolvedModel = typeof model === 'string' && model.trim() !== '' ? model.trim() : bound.model;
     if (!['off', 'high', 'max'].includes(effort)) throw new Error(`unknown effort "${effort}"`);
     // Accept POSIX, Windows drive (D:\x, C:/x) and UNC (\\srv\share) roots.
     if (!isAbsoluteCwd(cwd)) throw new Error('cwd must be an absolute path');
@@ -113,7 +121,7 @@ class WorkerRegistry {
     const id = `hub-${this.nextId++}-${Date.now().toString(36)}`;
     const sessionId = `session-${randomUUID()}`;
     const job = {
-      id, sessionId, tier, model, effort, task, source, cwd: cwdPath,
+      id, sessionId, tier, model: resolvedModel, provider: resolvedProvider, effort, task, source, cwd: cwdPath,
       status: 'running', turn: 0, step: 0, currentTool: null, toolCalls: 0,
       tokens: { input: 0, output: 0, reasoning: 0 },
       startedAt: new Date().toISOString(), endedAt: null,
@@ -122,7 +130,7 @@ class WorkerRegistry {
     };
     this.jobs.set(id, job);
 
-    const selection = { provider, model, reasoningEffort: effort };
+    const selection = { provider: resolvedProvider, model: resolvedModel, reasoningEffort: effort };
     const presets = this.ctx.get('agentPresets');
     const cfg = this.getConfig?.() ?? {};
     const wanted = preset ?? (tier === 'flash' ? cfg.preset_flash : cfg.preset_pro);
@@ -464,6 +472,28 @@ export async function apply(ctx) {
             ok: true,
             defaultId: presets.defaultId,
             presets: list.map((p) => ({ id: p.id, name: p.name ?? p.id })),
+          });
+        } catch (err) {
+          return sendJson(res, 500, { ok: false, error: err?.message ?? String(err) });
+        }
+      },
+    }));
+
+    // The MCP server runs as its own process and cannot reach ctx.llm, so the
+    // routes the HOST has configured are published here. This is the whole
+    // point of issue #10: a local model is configured once in DSH, and the
+    // worker config names it instead of redefining it.
+    disposers.push(webServer.register({
+      kind: 'exact', path: `${ROUTE_BASE}/providers`,
+      handler: async (req, res) => {
+        if (!isLoopbackRequest(req)) return sendJson(res, 403, { ok: false, error: 'loopback only' });
+        try {
+          const { readGlobalConfig } = await import('../install/install.mjs');
+          const providers = ctx.llm.listProviders().map((p) => ({ id: p.id, name: p.name ?? p.id }));
+          return sendJson(res, 200, {
+            ok: true,
+            providers,
+            bindings: describeBindings(readGlobalConfig()),
           });
         } catch (err) {
           return sendJson(res, 500, { ok: false, error: err?.message ?? String(err) });

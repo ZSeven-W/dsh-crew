@@ -48,6 +48,14 @@ export const hub = {
     body: JSON.stringify(spec),
   }).then((b) => b.job),
   list: () => call('/jobs').then((b) => b.jobs),
+  // The LLM routes the HOST has configured. Only the hub can answer this: the
+  // MCP server is a separate process with no ctx.llm. Returns [] rather than
+  // throwing when the hub is too old to serve the route, so a stale hub
+  // degrades to "cannot enumerate" instead of breaking the config tool.
+  providers: () => call('/providers').then((b) => ({
+    providers: b.providers ?? [],
+    bindings: b.bindings ?? null,
+  })).catch(() => ({ providers: [], bindings: null })),
   // `waitSeconds = 0` keeps the plain "read it now" semantics; anything longer
   // is served by repeated short waits until the job settles or the budget ends.
   get: async (id, waitSeconds = 0) => {

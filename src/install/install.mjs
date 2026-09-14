@@ -85,6 +85,15 @@ export const GLOBAL_CONFIG_DEFAULTS = {
   custom_providers: [],
   // User-added model ids per provider, merged into the panel's model list.
   extra_models: {},
+  // Which LLM route each worker tier dispatches to. A provider id names a
+  // route the HOST already has configured (ctx.llm.listProviders()) — this
+  // plugin deliberately does NOT define providers of its own, so a local
+  // model (Ollama and friends) is configured once, in DSH, and merely named
+  // here. Empty string = the built-in DeepSeek default for that tier.
+  flash_provider: '',
+  flash_model: '',
+  pro_provider: '',
+  pro_model: '',
   // Hub-mode agent preset per tier: 'default' follows the DSH roster default.
   preset_flash: 'minimal',
   preset_pro: 'default',

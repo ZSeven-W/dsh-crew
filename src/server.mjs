@@ -23,6 +23,7 @@ const allowConcurrentCwdSchema = z.boolean().optional().describe('Allow this dis
 // Initial values come from the global config (~/.config/dsh-crew/config.json,
 // edited on the DSH settings page); dsh_worker_config overrides per session.
 import { readGlobalConfig } from './install/install.mjs';
+import { describeBindings, resolveTierBinding } from './tier-binding.mjs';
 const globalDefaults = readGlobalConfig();
 const sessionConfig = {
   enabled: true,
@@ -34,9 +35,20 @@ const sessionConfig = {
   escalate_on_failure: globalDefaults.escalate_on_failure,
   preset_flash: globalDefaults.preset_flash ?? 'default',
   preset_pro: globalDefaults.preset_pro ?? 'default',
+  // Tier -> LLM route. A provider id names a route the HOST already has
+  // configured; blank means the tier's built-in DeepSeek default (#10).
+  flash_provider: globalDefaults.flash_provider ?? '',
+  flash_model: globalDefaults.flash_model ?? '',
+  pro_provider: globalDefaults.pro_provider ?? '',
+  pro_model: globalDefaults.pro_model ?? '',
   // WPC9: max worker→worker nesting depth before a dispatch is refused.
   origin_depth_limit: DEFAULT_ORIGIN_DEPTH_LIMIT,
 };
+
+/** The {provider, model} this session dispatches `tier` to. */
+function bindingForTier(tier) {
+  return resolveTierBinding(tier, sessionConfig);
+}
 
 function presetForTier(tier) {
   const p = tier === 'flash' ? sessionConfig.preset_flash : sessionConfig.preset_pro;
@@ -187,7 +199,7 @@ server.registerTool('dsh_run_worker', {
       }
       let spawned;
       try {
-        spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t), origin_chain: origin.origin.chain, origin_depth: origin.origin.depth });
+        spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t), ...bindingForTier(t), origin_chain: origin.origin.chain, origin_depth: origin.origin.depth });
         updateCwdLockHolder({ cwd: workDir, jobId: spawned.id });
         hubOrigins.set(spawned.id, origin.origin);
       } catch (err) {
@@ -206,7 +218,7 @@ server.registerTool('dsh_run_worker', {
     if (!origin.ok) return { refusal: originRefusal(origin) };
     let job;
     try {
-      job = await startJob({ task, tier: t, effort: e, cwd: workDir, timeoutMs: timeout * 1000, source: ORCHESTRATOR, origin: origin.origin, allowConcurrentCwd: !!allow_concurrent_cwd });
+      job = await startJob({ task, tier: t, effort: e, cwd: workDir, timeoutMs: timeout * 1000, source: ORCHESTRATOR, origin: origin.origin, allowConcurrentCwd: !!allow_concurrent_cwd, ...bindingForTier(t) });
     } catch (err) {
       if (err instanceof CwdLockError) return { refusal: text({ error: err.message, rejected_by: 'cwd-lock', holder: err.holder }) };
       throw err;
@@ -237,7 +249,7 @@ server.registerTool('dsh_run_worker', {
 
 server.registerTool('dsh_worker_config', {
   title: 'Session worker configuration',
-  description: 'Read or update session-level worker settings: enable/disable dispatch, default tier/effort/timeout, execution mode (auto = prefer hub, hub = require the DSH hub, standalone = never use it), tier policy and failure escalation. Call with no arguments to read. The output includes worker_profiles — the external-CLI backends (agy, grok) usable via the worker= parameter of dsh_run_worker / dsh_spawn_worker — and origin, the inherited worker→worker dispatch chain with its depth limit. Session-only.',
+  description: 'Read or update session-level worker settings: enable/disable dispatch, default tier/effort/timeout, execution mode (auto = prefer hub, hub = require the DSH hub, standalone = never use it), tier policy, failure escalation, and which LLM route each tier dispatches to. Call with no arguments to read. To run workers on a local model (Ollama and the like), configure that provider ONCE in DSH and then name it here with flash_provider/flash_model or pro_provider/pro_model — this plugin never defines providers of its own. available_providers lists what the host has configured (hub mode only); bindings shows what each tier currently resolves to. The output includes worker_profiles — the external-CLI backends (agy, grok) usable via the worker= parameter of dsh_run_worker / dsh_spawn_worker — and origin, the inherited worker→worker dispatch chain with its depth limit. Session-only.',
   inputSchema: {
     enabled: z.boolean().optional().describe('false = refuse all worker dispatch this session'),
     default_tier: z.enum(['flash', 'pro']).optional(),
@@ -248,6 +260,10 @@ server.registerTool('dsh_worker_config', {
     escalate_on_failure: z.boolean().optional().describe('retry a failed blocking flash run once on pro'),
     preset_flash: z.string().optional().describe('hub-mode agent preset for flash workers (preset id, or "default")'),
     preset_pro: z.string().optional().describe('hub-mode agent preset for pro workers (preset id, or "default")'),
+    flash_provider: z.string().optional().describe('LLM provider route the flash tier dispatches to. Must be a provider DSH already has configured — see available_providers in this tool\'s output. Empty string restores the built-in DeepSeek default. Configure the provider itself in DSH, not here.'),
+    flash_model: z.string().optional().describe('Model id for the flash tier, as that provider names it (e.g. a local Ollama model). Empty string restores the default.'),
+    pro_provider: z.string().optional().describe('LLM provider route the pro tier dispatches to. Same rules as flash_provider.'),
+    pro_model: z.string().optional().describe('Model id for the pro tier. Empty string restores the default.'),
     origin_depth_limit: z.number().int().min(1).max(32).optional().describe('Max worker→worker origin-chain depth (default 3). Deeper dispatches are refused to stop recursive self-amplification; raise only for deliberate deep delegation.'),
     reset: z.boolean().optional().describe('true = restore all defaults first'),
   },
@@ -257,9 +273,30 @@ server.registerTool('dsh_worker_config', {
     sessionConfig.origin_depth_limit = DEFAULT_ORIGIN_DEPTH_LIMIT;
   }
   for (const [k, v] of Object.entries(patch)) if (v !== undefined) sessionConfig[k] = v;
+  const reachable = await hubAvailable();
+  // Only the hub can enumerate the host's LLM routes (this process has no
+  // ctx.llm), so in standalone mode the list is honestly absent rather than
+  // empty — "we cannot see them" is not "there are none".
+  const available = reachable ? (await hub.providers()).providers : null;
+  const bindings = describeBindings(sessionConfig);
+  const custom = Object.entries(bindings).filter(([, b]) => b.custom).map(([tier]) => tier);
+  const unknown = available === null
+    ? []
+    : custom.filter((tier) => !available.some((p) => p.id === bindings[tier].provider));
   return text({
     ...sessionConfig,
-    hub_reachable: await hubAvailable(),
+    hub_reachable: reachable,
+    bindings,
+    available_providers: available,
+    ...(available === null && custom.length > 0
+      ? { providers_note: 'The hub is not reachable, so the configured provider ids could not be checked against what DSH actually has. A route DSH does not know will fail at dispatch, not here.' }
+      : {}),
+    ...(unknown.length > 0
+      ? { providers_warning: `DSH has no provider route named ${unknown.map((t) => JSON.stringify(bindings[t].provider)).join(', ')} (bound to: ${unknown.join(', ')}). Configure it in DSH first, or these dispatches will fail.` }
+      : {}),
+    ...(custom.length > 0
+      ? { route_caveat: 'Appearing in available_providers only means an adapter is registered, NOT that it can run a worker. Measured: a route registered purely to re-route another provider fails a dispatch with "registration.adapter.prepareCall is not a function". Nor does DSH report tool-calling support anywhere, and a worker that cannot call tools returns prose and touches no files. A tier bound to a custom route is therefore UNVERIFIED until you dispatch to it once.' }
+      : {}),
     worker_profiles: listProfiles(),
     origin: { chain: INHERITED_ORIGIN.chain, depth: INHERITED_ORIGIN.depth, depth_limit: depthLimitNow() },
   });
@@ -307,7 +344,7 @@ server.registerTool('dsh_spawn_worker', {
     }
     let spawned;
     try {
-      spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t), origin_chain: origin.origin.chain, origin_depth: origin.origin.depth });
+      spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t), ...bindingForTier(t), origin_chain: origin.origin.chain, origin_depth: origin.origin.depth });
       updateCwdLockHolder({ cwd: workDir, jobId: spawned.id });
       hubOrigins.set(spawned.id, origin.origin);
     } catch (err) {
@@ -320,7 +357,7 @@ server.registerTool('dsh_spawn_worker', {
   const origin = extendOrigin({ inherited: INHERITED_ORIGIN, backend: 'standalone', cwd: workDir, source: ORCHESTRATOR, depthLimit });
   if (!origin.ok) return originRefusal(origin);
   try {
-    const job = await startJob({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, origin: origin.origin, allowConcurrentCwd: !!allow_concurrent_cwd });
+    const job = await startJob({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, origin: origin.origin, allowConcurrentCwd: !!allow_concurrent_cwd, ...bindingForTier(t) });
     return text(jobView(job));
   } catch (err) {
     if (err instanceof CwdLockError) return text({ error: err.message, rejected_by: 'cwd-lock', holder: err.holder });

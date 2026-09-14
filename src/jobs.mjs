@@ -50,7 +50,7 @@ function clipTask(task, cap = 300) {
 
 export function publishStatus() {
   shard.publish([...jobs.values()].map((j) => ({
-    id: j.id, tier: j.tier, model: j.model, effort: j.effort, status: j.status, source: j.source,
+    id: j.id, tier: j.tier, model: j.model, provider: j.provider, effort: j.effort, status: j.status, source: j.source,
     task: clipTask(j.task), cwd: j.cwd, turn: j.turn, step: j.step, toolCalls: j.toolCalls,
     currentTool: j.currentTool, tokens: j.tokens,
     backend: backendOf(j), profile: profileOf(j), mode: modeOf(j),
@@ -70,7 +70,7 @@ export function publishStatus() {
 
 export function jobView(j, { withResult = false } = {}) {
   const v = {
-    id: j.id, tier: j.tier, model: j.model, effort: j.effort, status: j.status, source: j.source,
+    id: j.id, tier: j.tier, model: j.model, provider: j.provider, effort: j.effort, status: j.status, source: j.source,
     task: clipTask(j.task), turn: j.turn, step: j.step, currentTool: j.currentTool,
     tokens: j.tokens, toolCalls: j.toolCalls,
     backend: backendOf(j), profile: profileOf(j), mode: modeOf(j),
@@ -106,9 +106,15 @@ export function registerJob(job) {
   return job;
 }
 
-export async function startJob({ task, tier = 'flash', effort = 'max', cwd, maxTokens = 49_152, timeoutMs = 1_800_000, source = 'api', origin = null, allowConcurrentCwd = false }) {
+export async function startJob({ task, tier = 'flash', effort = 'max', cwd, maxTokens = 49_152, timeoutMs = 1_800_000, source = 'api', origin = null, allowConcurrentCwd = false, provider, model }) {
   const tierInfo = TIERS[tier];
   if (!tierInfo) throw new Error(`unknown tier "${tier}" (expected: ${Object.keys(TIERS).join(', ')})`);
+  // The caller (the MCP server, which owns session-level config) may bind this
+  // tier to a route the HOST has configured — a local model, typically. Blank
+  // is not a binding: it falls back to the tier's built-in DeepSeek route
+  // rather than dispatching to "". See tier-binding.mjs and issue #10.
+  const dispatchProvider = typeof provider === 'string' && provider.trim() !== '' ? provider.trim() : 'deepseek-official';
+  const dispatchModel = typeof model === 'string' && model.trim() !== '' ? model.trim() : tierInfo.model;
   if (!['off', 'high', 'max'].includes(effort)) throw new Error(`unknown effort "${effort}" (expected: off, high, max)`);
 
   const workspace = resolve(cwd ?? process.cwd());
@@ -124,7 +130,7 @@ export async function startJob({ task, tier = 'flash', effort = 'max', cwd, maxT
   }
 
   const job = {
-    id, tier, model: tierInfo.model, effort, task, source, cwd: workspace,
+    id, tier, model: dispatchModel, provider: dispatchProvider, effort, task, source, cwd: workspace,
     status: 'running', turn: 0, step: 0, currentTool: null, toolCalls: 0,
     tokens: { input: 0, output: 0, reasoning: 0 },
     startedAt, endedAt: null,
@@ -175,8 +181,8 @@ export async function startJob({ task, tier = 'flash', effort = 'max', cwd, maxT
         requestTimeoutMs: timeoutMs,
       },
       cwd: workspace,
-      provider: 'deepseek-official',
-      model: tierInfo.model,
+      provider: dispatchProvider,
+      model: dispatchModel,
       maxTokens,
     });
     job.harness = harness;
