@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Phiên bản plugin hiện tại: <code>0.1.0-rc.8</code> &middot; Đã kiểm thử với DSH <code>0.1.1-rc.1</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Phiên bản plugin hiện tại: <code>0.1.0-rc.9</code> &middot; Đã kiểm thử với DSH <code>0.1.1-rc.1</code></sub>
 </p>
 
 <p align="center">
