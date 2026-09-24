@@ -45,6 +45,18 @@ function removeTomlSection(toml, header) {
   return lines.join('\n');
 }
 
+/**
+ * Quote a string as a TOML basic string. A raw Windows path between double
+ * quotes is not valid TOML: `\U` and `\n` in `C:\Users\...\node_modules`
+ * are escape sequences, so the config fails to parse (#12). JSON's escapes
+ * are a subset of TOML's, and unlike a '...' literal this survives a quote
+ * in the path (a user named O'Brien).
+ */
+export function tomlString(s) {
+  // DEL is the one control character JSON leaves raw and TOML rejects.
+  return JSON.stringify(String(s)).replace(/\x7f/g, '\\u007f');
+}
+
 // One-time migration from the pre-rename config dir (dsh-workers → dsh-crew).
 try {
   const oldDir = join(homedir(), '.config', 'dsh-workers');
@@ -256,7 +268,7 @@ export function installCodex({ home = homedir(), scope } = {}) {
     const bak = backup(dest);
     if (bak) actions.push(`backup: ${bak}`);
     const rendered = readFileSync(join(srcDir, f), 'utf8')
-      .replace(/args = \[.*server\.mjs"\]/, `args = ["${join(ROOT, 'src', 'server.mjs')}"]`);
+      .replace(/args = \[.*server\.mjs"\]/, () => `args = [${tomlString(join(ROOT, 'src', 'server.mjs'))}]`);
     writeFileSync(dest, rendered);
     actions.push(`role: ${dest}`);
   }
@@ -389,7 +401,7 @@ export function installGrok({ home = homedir() } = {}) {
   if (bak) actions.push(`backup: ${bak}`);
   let toml = readText(cfgFile);
   toml = removeTomlSection(toml, 'mcp_servers.dsh-crew').replace(/\n+$/, '');
-  toml += `\n\n[mcp_servers.dsh-crew]\ncommand = "node"\nargs = ["${serverPath}"]\nenabled = true\n`;
+  toml += `\n\n[mcp_servers.dsh-crew]\ncommand = "node"\nargs = [${tomlString(serverPath)}]\nenabled = true\n`;
   writeFileSync(cfgFile, toml);
   actions.push(`mcp: registered dsh-crew (node ${serverPath}) in ${cfgFile}`);
 

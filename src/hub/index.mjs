@@ -471,7 +471,7 @@ export async function apply(ctx) {
           return sendJson(res, 200, {
             ok: true,
             defaultId: presets.defaultId,
-            presets: list.map((p) => ({ id: p.id, name: p.name ?? p.id })),
+            presets: list.map((p) => ({ id: p.id, name: p.name ?? p.id, trust: p.trust })),
           });
         } catch (err) {
           return sendJson(res, 500, { ok: false, error: err?.message ?? String(err) });

@@ -2,7 +2,7 @@
 // global worker configuration, and the live jobs table.
 // Talks only to the plugin's own loopback routes.
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
 import { reconcileGhosts, displayJobs, groupJobs, workspaceKey, basenameOf, abbrevPath, workspaceLocks, lockBadgeOf, statusInfoOf, ghostPidOf, procBadgeOf, dueProcProbes } from './jobs-view';
@@ -99,6 +99,7 @@ const COPY = {
     tierPolicyDesc: { auto: 'auto · orchestrator 自选', 'flash-only': '只用 flash', 'pro-only': '只用 pro' },
     escalateHint: 'flash 失败自动用 pro 重试一次',
     presetFlash: 'flash 模式', presetPro: 'pro 模式',
+    builtInPresetNames: { standard: '标准模式', ptc: 'PTC 模式', minimal: '极简模式', cordis: '创造模式' } as Record<string, string>,
     multimodal: '多模态',
     visionProvider: '视觉 provider', visionModel: '视觉模型', imagegenProvider: '生图 provider',
     customProviders: '自定义 Provider', addProvider: '＋ 添加 Provider',
@@ -190,6 +191,7 @@ const COPY = {
     tierPolicyDesc: { auto: 'auto · orchestrator picks', 'flash-only': 'flash only', 'pro-only': 'pro only' },
     escalateHint: 'retry a failed flash run once on pro',
     presetFlash: 'flash preset', presetPro: 'pro preset',
+    builtInPresetNames: { standard: 'Standard mode', ptc: 'PTC mode', minimal: 'Minimal mode', cordis: 'Creator mode' } as Record<string, string>,
     multimodal: 'Multimodal',
     visionProvider: 'Vision provider', visionModel: 'Vision model', imagegenProvider: 'Image-gen provider',
     customProviders: 'Custom providers', addProvider: '＋ Add provider',
@@ -390,7 +392,18 @@ function WorkersPanel({ ctx }: { ctx: any }) {
   const [status, setStatus] = useState<any>(null);
   const [config, setConfig] = useState<any>(null);
   const [dynModels, setDynModels] = useState<Record<string, Array<{ value: string; label?: string }>>>({});
-  const [presetOptions, setPresetOptions] = useState<Array<{ value: string; label?: string }>>([{ value: 'default' }]);
+  const [presetRoster, setPresetRoster] = useState<{ defaultId?: string; presets: Array<{ id: string; name?: string; trust?: string }> }>({ presets: [] });
+  // Labels are built at render, not at fetch, so they follow a locale switch.
+  // A shipped preset's file carries its Chinese name only; the host localizes
+  // it by id, and only for trust "system" so a user preset that happens to
+  // reuse an id keeps its own name. Same rule here (#11).
+  const presetOptions = useMemo(() => [
+    { value: 'default', label: copy.presetDefault(presetRoster.defaultId) },
+    ...presetRoster.presets.map((x) => ({
+      value: x.id,
+      label: (x.trust === 'system' && copy.builtInPresetNames[x.id]) || x.name || x.id,
+    })),
+  ], [presetRoster, copy]);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [provForm, setProvForm] = useState<{
@@ -502,10 +515,7 @@ function WorkersPanel({ ctx }: { ctx: any }) {
       if (j.ok) mergeJobs(j.jobs ?? []);
       if (s.ok) setStatus(s.status);
       if (c.ok) setConfig((prev: any) => prev ?? c.config);
-      if (pr.ok) setPresetOptions([
-        { value: 'default', label: copy.presetDefault(pr.defaultId) },
-        ...(pr.presets ?? []).map((x: any) => ({ value: x.id, label: x.name ?? x.id })),
-      ]);
+      if (pr.ok) setPresetRoster({ defaultId: pr.defaultId, presets: pr.presets ?? [] });
     } catch { /* instance restarting */ }
   }, [get, mergeJobs]);
 
