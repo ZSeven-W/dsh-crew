@@ -46,6 +46,23 @@ function userMessage(text) {
   });
 }
 
+/**
+ * The rejection a worker's ask_user_question receives. Shaped like the host's
+ * UserQuestionError (name + code) so the seam restores it as one and the
+ * model sees the message, the same way the host answers a question from a
+ * child agent that has no human either (DELEGATED_CALLER).
+ */
+export function unattendedQuestion() {
+  const error = new Error(
+    'no one is attending this dsh-crew worker session, so a question cannot be answered and must not be waited on. '
+    + 'If the choice is yours to make, take the option you would mark Recommended and state it as an assumption in your final message; '
+    + 'otherwise stop and put the unresolved question in your final message so the orchestrator can decide.',
+  );
+  error.name = 'UserQuestionError';
+  error.code = 'UNATTENDED_WORKER';
+  return error;
+}
+
 export const name = 'dsh-crew';
 export const inject = ['agents', 'sessions', 'agentDefaultModel', 'tools', 'llm', 'attachments'];
 
@@ -174,6 +191,9 @@ class WorkerRegistry {
         setup: async (agentCtx) => {
           installModelSelection(agentCtx, { current: selection, assembled: undefined });
           if (presets !== undefined) await presets.mount(agentCtx, presetId);
+          // Nobody attends a worker session, so a question would wait forever
+          // (#13). Claim this agent's requests ahead of the Web answerer.
+          agentCtx.on('user-questions/request', () => Promise.reject(unattendedQuestion()), true);
           agentCtx.on('session/event', onEvent);
           agentCtx.on('agent/error', (payload) => {
             const err = payload?.error;
