@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Rilis plugin saat ini: <code>0.1.0-rc.10</code> &middot; Diuji dengan DSH <code>0.1.1-rc.1</code></sub>
+  <sub>npm: <code>@zseven-w/dsh-crew</code> &middot; Rilis plugin saat ini: <code>0.1.0-rc.11</code> &middot; Diuji dengan DSH <code>0.1.1-rc.1</code></sub>
 </p>
 
 <p align="center">
