@@ -415,6 +415,8 @@ node src/install/cli.mjs grok
   - DSH Web 在跑 → job 进 hub 模式（`mode: "hub"`）
   - 没跑 → 回落 standalone runtime
 
+**Windows 进程查询：**派发来源识别和经过验证的单进程终止使用 PowerShell/CIM。孤立进程接口暂不支持进程组终止，会返回 `unsupported-platform`，不会发送停止信号。
+
 ## 方案选择与限制
 
 ### 日常订阅用户 → 壳 subagent 方案（推荐）

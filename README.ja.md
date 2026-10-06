@@ -415,6 +415,8 @@ node src/install/cli.mjs grok
   - DSH Web が稼働中 → ジョブは hub モードで実行されます (`mode: "hub"`)
   - 未稼働 → standalone ランタイムにフォールバックします
 
+**Windows のプロセス確認：**呼び出し元の識別と検証済みの単一プロセスの終了には PowerShell/CIM を使用します。孤立プロセスの API はプロセスグループの終了を `unsupported-platform` で拒否し、シグナルを送信しません。
+
 ## 方式の選択と制限事項
 
 ### 通常のサブスクリプション利用者 → shell subagent 方式 (推奨)

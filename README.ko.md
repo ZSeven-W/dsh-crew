@@ -417,6 +417,8 @@ dispatch를 *잘* 하는 방법 — flash vs pro 선택, 자기 완결적인 브
   - DSH Web 실행 중 → job이 hub mode로 실행됩니다(`mode: "hub"`)
   - 실행 중이 아님 → standalone runtime으로 폴백합니다
 
+**Windows 프로세스 조회:** 호출 출처 식별과 검증된 단일 프로세스 종료에는 PowerShell/CIM을 사용합니다. 고립 프로세스 API는 프로세스 그룹 종료를 `unsupported-platform`으로 거부하며 신호를 보내지 않습니다.
+
 ## 솔루션 선택 및 제한 사항
 
 ### 일반 구독자 → shell subagent 방식(권장)

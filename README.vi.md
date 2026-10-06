@@ -417,6 +417,8 @@ Gói này cũng là một DSH bundle hợp lệ (`dsh.bundle` + `cordis.patch.ym
   - DSH Web đang chạy → job vào hub mode (`mode: "hub"`)
   - Không chạy → rơi về standalone runtime
 
+**Kiểm tra tiến trình Windows:** nhận diện nguồn gọi và kết thúc một tiến trình đã xác minh dùng PowerShell/CIM. API tiến trình mồ côi từ chối kết thúc nhóm với `unsupported-platform` và không gửi tín hiệu.
+
 ## Lựa chọn giải pháp và giới hạn
 
 ### Người dùng thuê bao → phương án shell subagent (khuyến nghị)

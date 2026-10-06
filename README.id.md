@@ -417,6 +417,8 @@ Paket ini juga merupakan DSH bundle yang valid (`dsh.bundle` + `cordis.patch.yml
   - DSH Web berjalan → job masuk mode hub (`mode: "hub"`)
   - Tidak berjalan → fallback ke runtime standalone
 
+**Pemeriksaan proses Windows:** identifikasi sumber panggilan dan penghentian satu proses yang telah diverifikasi memakai PowerShell/CIM. API proses yatim menolak penghentian grup dengan `unsupported-platform` tanpa mengirim sinyal.
+
 ## Pemilihan Solusi dan Keterbatasan
 
 ### Pelanggan reguler → pendekatan subagent shell (disarankan)

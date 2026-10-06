@@ -417,6 +417,8 @@ Este pacote também é um bundle DSH válido (`dsh.bundle` + `cordis.patch.yml`)
   - DSH Web em execução → os jobs entram no modo hub (`mode: "hub"`)
   - Sem execução → volta para o runtime standalone
 
+**Consulta de processos no Windows:** a identificação da origem e o encerramento verificado de um processo usam PowerShell/CIM. A API de processos órfãos recusa o encerramento de grupos com `unsupported-platform`, sem enviar sinais.
+
 ## Seleção de solução e limitações
 
 ### Assinantes regulares → abordagem de shell subagent (recomendada)
