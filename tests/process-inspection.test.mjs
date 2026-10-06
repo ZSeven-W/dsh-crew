@@ -25,7 +25,7 @@ test('Windows queries CIM directly and preserves quoted Unicode command lines', 
     assert.match(args.at(-1), /Get-CimInstance Win32_Process/);
     assert.match(args.at(-1), /ProcessId = 42/);
     assert.equal(options.windowsHide, true);
-    assert.equal(options.timeout, 3000);
+    assert.equal(options.timeout, 10_000);
     return '\ufeff' + JSON.stringify(record);
   };
   assert.deepEqual(readProcessName(42, { platform: 'win32', run }), { ok: true, name: 'Codex.exe' });
@@ -98,7 +98,7 @@ test('native process inspection refuses an unrelated child and kills only the ve
   try {
     await Promise.all([once(worker, 'spawn'), once(unrelated, 'spawn')]);
     const info = readProcessCommand(worker.pid);
-    assert.equal(info.ok, true);
+    assert.equal(info.ok, true, JSON.stringify(info));
     assert.ok(info.command.includes('dsh-sdk-jsonrpc-demo'));
     assert.equal(readProcessName(worker.pid).ok, true);
     await assert.rejects(killWorkerProcess({ pid: unrelated.pid, graceMs: 100 }), (error) => error.code === 'not-a-worker');

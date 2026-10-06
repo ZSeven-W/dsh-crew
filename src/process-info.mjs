@@ -6,7 +6,10 @@ function validPid(pid) {
 
 function query(pid, field, { platform = process.platform, run = execFileSync } = {}) {
   if (!validPid(pid)) return { ok: false, reason: 'bad-pid' };
-  const options = { encoding: 'utf8', timeout: 3000, maxBuffer: 256 * 1024, windowsHide: true };
+  // PowerShell + the first CIM query can exceed ps's 3s budget on a cold
+  // Windows host. Keep a finite Windows budget without treating that cold
+  // start as evidence that the command line is unavailable.
+  const options = { encoding: 'utf8', timeout: platform === 'win32' ? 10_000 : 3000, maxBuffer: 256 * 1024, windowsHide: true };
   try {
     if (platform !== 'win32') {
       const value = String(run('ps', ['-p', String(pid), '-o', field === 'name' ? 'comm=' : 'command='], options) ?? '').trim();
@@ -16,7 +19,7 @@ function query(pid, field, { platform = process.platform, run = execFileSync } =
     // executable name and full command line; tasklist cannot supply the latter.
     const script = "$ErrorActionPreference = 'Stop'; "
       + '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding; '
-      + `$entry = Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}'; `
+      + `$entry = Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}' -Property ProcessId,Name,CommandLine; `
       + "if ($null -eq $entry) { 'null' } else { "
       + '$entry | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json -Compress }';
     const output = String(run('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], options) ?? '')
