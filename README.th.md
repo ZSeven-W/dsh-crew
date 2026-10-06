@@ -417,6 +417,8 @@ node src/install/cli.mjs grok
   - DSH Web ทำงานอยู่ → jobs เข้าสู่โหมด hub (`mode: "hub"`)
   - ไม่ได้ทำงานอยู่ → fallback ไปยัง runtime แบบ standalone
 
+**การตรวจสอบโปรเซสบน Windows:** การระบุแหล่งที่มาของคำขอและการหยุดโปรเซสเดี่ยวที่ตรวจสอบแล้วใช้ PowerShell/CIM ส่วน API สำหรับโปรเซสที่ถูกทิ้งจะปฏิเสธการหยุดกลุ่มโปรเซสด้วย `unsupported-platform` โดยไม่ส่งสัญญาณหยุด
+
 ## การเลือกแนวทางและข้อจำกัด
 
 ### ผู้ใช้แบบ subscription ทั่วไป → แนวทาง shell subagent (แนะนำ)

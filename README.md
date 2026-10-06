@@ -417,6 +417,8 @@ This package is also a valid DSH bundle (`dsh.bundle` + `cordis.patch.yml`). Aft
   - DSH Web running → jobs enter hub mode (`mode: "hub"`)
   - Not running → fall back to standalone runtime
 
+**Windows process inspection:** dispatch-source detection and verified single-process termination use PowerShell/CIM. The ghost-process endpoint refuses process-group termination with `unsupported-platform`; it sends no signal.
+
 ## Solution selection and limitations
 
 ### Regular subscribers → shell subagent approach (recommended)

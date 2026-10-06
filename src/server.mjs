@@ -10,8 +10,9 @@ import { listProfiles, resolveProfile } from './worker-profiles.mjs';
 import { readInheritedOrigin, extendOrigin, DEFAULT_ORIGIN_DEPTH_LIMIT } from './origin-guard.mjs';
 import { acquireCwdLock, releaseCwdLockByJobId, updateCwdLockHolder, getCwdLocks, CwdLockError } from './cwd-lock.mjs';
 import { resolveWorkerCwd } from './paths.mjs';
+import { detectOrchestrator } from './process-info.mjs';
 
-const server = new McpServer({ name: 'dsh-crew', version: '0.1.0-rc.12' });
+const server = new McpServer({ name: 'dsh-crew', version: '0.1.0-rc.13' });
 
 const tierSchema = z.enum(['flash', 'pro']).optional().describe('Worker model tier. flash = mechanical, well-scoped work (single-file edits, lookups, formatting); pro = multi-file changes, debugging, design judgment. Omit to use the session default. Ignored when worker= is set.');
 const effortSchema = z.enum(['off', 'high', 'max']).optional().describe('Reasoning effort for the worker. Omit to use the session default. With worker= it only applies when passed explicitly and the profile supports it (agy maps to low/medium/high).');
@@ -68,18 +69,6 @@ function text(obj) {
 
 // Which orchestrator spawned this MCP server — stamped on every job so the
 // panel can show where a dispatch came from.
-function detectOrchestrator() {
-  if (process.env.CLAUDECODE || process.env.CLAUDE_CODE_ENTRYPOINT) return 'claude-code';
-  try {
-    const { execSync } = require('node:child_process');
-    const comm = execSync(`ps -o comm= -p ${process.ppid}`, { encoding: 'utf8' }).trim().toLowerCase();
-    if (comm.includes('claude')) return 'claude-code';
-    if (comm.includes('codex')) return 'codex';
-    return comm.split('/').pop() || 'unknown';
-  } catch { return 'unknown'; }
-}
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
 const ORCHESTRATOR = detectOrchestrator();
 
 // ---------- WPC9 guardrails ----------

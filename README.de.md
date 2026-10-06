@@ -417,6 +417,8 @@ Dieses Paket ist auch ein gültiges DSH-Bundle (`dsh.bundle` + `cordis.patch.yml
   - DSH Web läuft → Jobs wechseln in den Hub-Modus (`mode: "hub"`)
   - Läuft nicht → Fallback auf die Standalone-Runtime
 
+**Windows-Prozessabfrage:** Die Erkennung des Aufrufers und das geprüfte Beenden eines einzelnen Prozesses verwenden PowerShell/CIM. Die API für verwaiste Prozesse verweigert das Beenden von Prozessgruppen mit `unsupported-platform` und sendet kein Signal.
+
 ## Lösungsauswahl und Einschränkungen
 
 ### Reguläre Abonnenten → Shell-Subagent-Ansatz (empfohlen)

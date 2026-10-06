@@ -415,6 +415,8 @@ node src/install/cli.mjs grok
   - DSH Web 執行中 → 工作進入 hub 模式（`mode: "hub"`）
   - 未執行 → 回落到獨立 runtime
 
+**Windows 程序查詢：**派發來源識別和經過驗證的單一程序終止使用 PowerShell/CIM。孤立程序介面暫不支援程序群組終止，會傳回 `unsupported-platform`，不會送出停止訊號。
+
 ## 方案選擇與限制
 
 ### 一般訂閱者 → shell subagent 方法（推薦）

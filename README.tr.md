@@ -417,6 +417,8 @@ Bu paket aynı zamanda geçerli bir DSH bundle'ıdır (`dsh.bundle` + `cordis.pa
   - DSH Web çalışıyorsa → işler hub moduna girer (`mode: "hub"`)
   - Çalışmıyorsa → standalone runtime'a geri döner
 
+**Windows işlem sorgusu:** çağrı kaynağını belirleme ve doğrulanmış tek işlem sonlandırma PowerShell/CIM kullanır. Yetim işlem API’si grup sonlandırmayı `unsupported-platform` ile reddeder ve sinyal göndermez.
+
 ## Çözüm seçimi ve sınırlamalar
 
 ### Normal aboneler → shell subagent yaklaşımı (önerilir)

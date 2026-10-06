@@ -10,7 +10,7 @@
 //      uses for writer liveness (status-shard.mjs writerProcessAlive).
 //   2. May we kill pid? A pid copied from a tombstone may have been recycled
 //      by an unrelated process since the job died, so the kill path reads the
-//      process command line (ps) and refuses unless it matches a process
+//      process command line (ps/CIM) and refuses unless it matches a process
 //      shape this plugin actually spawns. Verified shapes (not guessed):
 //        - standalone DSH runtime: `node .../dsh-sdk-jsonrpc-demo/lib/bin.js
 //          .../worker.cordis.yml`. jobs.mjs spawns node_modules/.bin/dsh-jsonrpc-agent,
@@ -27,8 +27,8 @@
 // Refusals follow the origin-guard style: a code, a reason and a readable
 // multi-line message (zh/en via i18n.mjs, adopted per request by the hub).
 
-import { execFileSync } from 'node:child_process';
 import { tr } from './i18n.mjs';
+import { readProcessCommand } from './process-info.mjs';
 
 /** SIGTERM -> SIGKILL grace window for the kill path. */
 export const PROC_KILL_GRACE_MS = 3_000;
@@ -61,18 +61,16 @@ export class ProcKillRefused extends Error {
   }
 }
 
-function defaultRunPs(args) {
-  return execFileSync('ps', args, { encoding: 'utf8', timeout: 3_000 });
-}
-
 /**
- * The command line of pid via `ps -p <pid> -o command=`.
+ * The command line of pid via POSIX ps or Windows CIM.
  * Returns { ok: true, command } or { ok: false, reason } where reason is
  * 'no-such-process' (ps found nothing / exited 1) or 'ps-failed' (cannot
  * read - refusing to kill without verification is the caller's job).
  * `run` is injectable so the verify script can exercise the logic without ps.
  */
-export function procCommand(pid, run = defaultRunPs) {
+export function procCommand(pid, run) {
+  if (run === undefined) return readProcessCommand(pid);
+  // Preserve the injected ps seam used by the existing POSIX verification.
   try {
     const command = String(run(['-p', String(pid), '-o', 'command=']) ?? '').trim();
     if (!command) return { ok: false, reason: 'no-such-process' };
@@ -92,17 +90,18 @@ export function procCommand(pid, run = defaultRunPs) {
 export function isWorkerCommand(command) {
   if (typeof command !== 'string' || command.trim() === '') return false;
   const cmd = command.trim();
-  const first = cmd.split(/\s+/)[0] ?? '';
+  const executable = /^(?:"([^"]+)"|'([^']+)'|([^\s]+))/.exec(cmd);
+  const first = executable?.[1] ?? executable?.[2] ?? executable?.[3] ?? '';
   const base = (first.split('/').pop() ?? '').split('\\').pop().toLowerCase();
   if (base === 'node' || base === 'node.exe') {
     // Standalone runtime: node .../@deepseek-ai/dsh-sdk-jsonrpc-demo/lib/bin.js .../worker.cordis.yml
     return /dsh-sdk-jsonrpc-demo/i.test(cmd) && /worker\.cordis\.yml/.test(cmd);
   }
-  if (base === 'agy') {
+  if (base === 'agy' || base === 'agy.exe') {
     // agy --print <task> --output-format stream-json --dangerously-skip-permissions ...
     return /--output-format\s+stream-json/.test(cmd);
   }
-  if (base === 'grok') {
+  if (base === 'grok' || base === 'grok.exe') {
     // grok -p <task> --output-format streaming-messages-json --include-partial-messages ...
     return /streaming-messages-json/.test(cmd) || /--include-partial-messages/.test(cmd);
   }
@@ -136,7 +135,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Throws ProcKillRefused on invalid input, an unreadable/gone process or a
  * non-worker command line. `ps` is injectable for tests.
  */
-export async function killWorkerProcess({ pid, pgid, graceMs = PROC_KILL_GRACE_MS, ps = undefined }) {
+export async function killWorkerProcess({ pid, pgid, graceMs = PROC_KILL_GRACE_MS, ps = undefined, platform = process.platform }) {
   if (parsePid(pid) === null) {
     throw new ProcKillRefused('bad-pid', 'pid 必须是正整数', 'pid must be a positive integer');
   }
@@ -149,6 +148,14 @@ export async function killWorkerProcess({ pid, pgid, graceMs = PROC_KILL_GRACE_M
       { pid, pgid },
     );
   }
+  if (groupKill && platform === 'win32') {
+    throw new ProcKillRefused(
+      'unsupported-platform',
+      'Windows 尚不支持工作进程组终止；未发送任何停止信号',
+      'Worker process-group termination is not supported on Windows; no signal was sent',
+      { pid, pgid },
+    );
+  }
 
   const info = procCommand(pid, ps);
   if (!info.ok) {
@@ -156,7 +163,7 @@ export async function killWorkerProcess({ pid, pgid, graceMs = PROC_KILL_GRACE_M
       throw new ProcKillRefused('no-such-process', '进程 ' + pid + ' 不存在', 'no such process: ' + pid, { pid });
     }
     throw new ProcKillRefused(
-      'ps-failed',
+      info.reason,
       '无法读取进程 ' + pid + ' 的命令行（' + info.detail + '）— 未经校验拒绝杀死',
       'could not read the command line of pid ' + pid + ' (' + info.detail + ') — refusing to kill without verification',
       { pid },

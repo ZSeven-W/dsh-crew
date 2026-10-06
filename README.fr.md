@@ -417,6 +417,8 @@ Ce package est aussi un bundle DSH valide (`dsh.bundle` + `cordis.patch.yml`). A
   - DSH Web actif → les jobs passent en mode hub (`mode: "hub"`)
   - Non actif → repli sur le runtime standalone
 
+**Inspection des processus Windows :** la détection de la source et l’arrêt vérifié d’un processus utilisent PowerShell/CIM. L’API des processus orphelins refuse l’arrêt d’un groupe avec `unsupported-platform`, sans envoyer de signal.
+
 ## Choix de solution et limitations
 
 ### Abonnés réguliers → approche par subagent shell (recommandé)

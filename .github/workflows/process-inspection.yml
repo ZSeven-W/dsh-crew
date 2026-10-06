@@ -1,0 +1,23 @@
+name: Process inspection
+
+on:
+  push:
+    branches: [main, 'fix/windows-process-inspection']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  native-process-inspection:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test tests/process-inspection.test.mjs
