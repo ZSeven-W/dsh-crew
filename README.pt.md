@@ -469,3 +469,12 @@ As dependências de runtime são apenas `@modelcontextprotocol/sdk` e `zod`; tod
 ## Licença
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` envia uma única chamada de ferramenta sem efeitos, com prazo limitado, a uma rota configurada no DSH, sem criar workers ou alterar vínculos. Pode consumir tokens. Perguntas sem resposta param o worker com `needs_input`; obtenha a resposta humana antes de reenviar. As permissões do host são herdadas, sem novo sandbox do SO.
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

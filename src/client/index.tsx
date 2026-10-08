@@ -133,7 +133,7 @@ const COPY = {
     cardCustomProv: { t: '自定义 Provider', d: '接入自己的 API 或本地命令；保存后会出现在上面的视觉 / 生图 provider 选择里。' },
     modeDesc: { auto: 'auto · 优先 hub', hub: 'hub · 必须 hub', standalone: 'standalone · 独立进程' },
     save: '保存', saved: '已保存', jobs: 'Worker 任务', empty: '当前没有 worker 任务。',
-    statusRunning: '运行中', statusStalled: '疑似卡住', statusDone: '完成', statusFailed: '失败', statusCancelled: '已取消', statusOrphaned: '失联',
+    statusRunning: '运行中', statusStalled: '疑似卡住', statusNeedsInput: '需输入', statusDone: '完成', statusFailed: '失败', statusCancelled: '已取消', statusOrphaned: '失联',
     statusTitle: (s: string) => `状态：${s}`,
     orphanWriterGone: (origin: string) => `所属实例已消失：写入该状态的进程（${origin}）已不存在，任务随它一起终止（最后状态 running）`,
     orphanVanished: (ago: string) => `任务从状态源消失（最后状态 running，${ago} 前最后一次见到）。很可能随所属实例退出而死亡；如果它其实在两次刷新间正常结束了，可点 × 清除`,
@@ -225,7 +225,7 @@ const COPY = {
     cardCustomProv: { t: 'Custom providers', d: 'Bring your own API or local command; saved providers appear in the vision / image-gen selects above.' },
     modeDesc: { auto: 'auto · prefer hub', hub: 'hub · require hub', standalone: 'standalone' },
     save: 'Save', saved: 'Saved', jobs: 'Worker jobs', empty: 'No worker jobs yet.',
-    statusRunning: 'running', statusStalled: 'stalled', statusDone: 'done', statusFailed: 'failed', statusCancelled: 'cancelled', statusOrphaned: 'orphaned',
+    statusRunning: 'running', statusStalled: 'stalled', statusNeedsInput: 'needs input', statusDone: 'done', statusFailed: 'failed', statusCancelled: 'cancelled', statusOrphaned: 'orphaned',
     statusTitle: (s: string) => `status: ${s}`,
     orphanWriterGone: (origin: string) => `Owning instance gone: the process that wrote this status (${origin}) no longer exists — the job died with it (last status: running)`,
     orphanVanished: (ago: string) => `Vanished from the status feed while running (last seen ${ago} ago). Likely died with its owning instance; if it actually finished between refreshes, dismiss it with ×`,
@@ -747,6 +747,7 @@ function WorkersPanel({ ctx }: { ctx: any }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             <div style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.45, fontSize: 12.5 }}>
               {job.task}
+              {job.status === 'needs_input' && <div style={{ whiteSpace: 'normal', color: '#d29922', marginTop: 4 }}>{(job.questions ?? []).map((q: any) => q.question).join(' · ')}</div>}
             </div>
             {pb && (
               <>
@@ -1042,8 +1043,8 @@ function WorkspaceGroup({ group, locks, copy, renderRow }: {
   const [collapsed, toggle] = useWorkspaceCollapse(wsKey);
   // Settled rows start folded away; the choice is remembered per workspace.
   const [finishedCollapsed, toggleFinished] = useCollapseSection(`finished-jobs.${wsKey}`, true);
-  const active = group.jobs.filter((j) => j.status === 'running' || j.status === 'orphaned');
-  const finished = group.jobs.filter((j) => j.status !== 'running' && j.status !== 'orphaned');
+  const active = group.jobs.filter((j) => j.status === 'running' || j.status === 'orphaned' || j.status === 'needs_input');
+  const finished = group.jobs.filter((j) => j.status !== 'running' && j.status !== 'orphaned' && j.status !== 'needs_input');
   const badge = lockBadgeOf(locks, group.cwd, copy);
   return (<>
     <tr>
@@ -1059,6 +1060,7 @@ function WorkspaceGroup({ group, locks, copy, renderRow }: {
             <span title={group.cwd} style={{ ...S.mono, fontSize: 11, opacity: 0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>{abbrevPath(group.cwd)}</span>
           )}
           <span style={{ fontSize: 11, opacity: 0.65 }}>（{group.jobs.length}）</span>
+          {group.jobs.some((j) => j.status === 'needs_input') && <span style={{ color: '#d29922', fontSize: 11 }}>{copy.statusNeedsInput}</span>}
           <span style={{ flex: 1 }} />
           {badge && (
             <span title={badge.title}

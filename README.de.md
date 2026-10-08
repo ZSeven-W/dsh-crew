@@ -469,3 +469,12 @@ Runtime-Abhängigkeiten sind nur `@modelcontextprotocol/sdk` und `zod`; jedes `@
 ## Lizenz
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` sendet eine zeitlich begrenzte, wirkungslose Werkzeuganfrage an eine konfigurierte DSH-Route, ohne Worker zu starten oder Bindungen zu ändern. Dabei können Tokens anfallen. Unbeantwortete Fragen stoppen den Worker mit `needs_input`; erst nach der Nutzerantwort erneut beauftragen. Host-Berechtigungen werden übernommen, kein neuer OS-Sandbox zugesichert.
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

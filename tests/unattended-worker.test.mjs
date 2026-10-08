@@ -34,5 +34,5 @@ test('the worker claims its questions ahead of the Web answerer', () => {
   // On the worker's own agentCtx (so the listener is scoped to it and dies
   // with it), and prepended, so it runs before any answerer that would
   // otherwise hold the question.
-  assert.ok(hub.includes("agentCtx.on('user-questions/request', () => Promise.reject(unattendedQuestion()), true);"));
+  assert.ok(hub.includes('installWorkerQuestionHandoff(agentCtx, job'));
 });

@@ -469,3 +469,12 @@ node scripts/smoke.mjs          # dispatches one real flash task end to end
 ## Лицензия
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` отправляет один ограниченный по времени вызов без побочных эффектов настроенному маршруту DSH, не создавая worker и не меняя привязки. Возможен расход токенов. Неотвеченный вопрос останавливает worker с `needs_input`; после ответа пользователя отправьте задачу снова. Права хоста наследуются, новый OS sandbox не добавляется.
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

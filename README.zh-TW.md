@@ -467,3 +467,12 @@ Runtime 依賴項僅有 `@modelcontextprotocol/sdk` 和 `zod`；每個 `@deepsee
 ## 授權
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` 對 DSH 已設定的路線發送一次有時限、無副作用的工具呼叫探測，不建立 worker 或改變綁定，但可能消耗模型 token。未回答的提問會使 worker 以 `needs_input` 停止；取得使用者回答後重新派發。沿用宿主權限，不宣稱新增作業系統沙箱。
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

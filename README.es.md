@@ -469,3 +469,12 @@ Las dependencias runtime son solo `@modelcontextprotocol/sdk` y `zod`; cada paqu
 ## Licencia
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` envía una única petición de herramienta sin efectos y con límite de tiempo a una ruta configurada en DSH, sin crear workers ni cambiar enlaces. Puede consumir tokens. Una pregunta sin respuesta detiene el worker con `needs_input`; obtenga la respuesta del usuario antes de reenviar. Se heredan permisos del host, sin un nuevo sandbox del SO.
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

@@ -469,3 +469,12 @@ Runtime dependencies มีเพียง `@modelcontextprotocol/sdk` และ
 ## สัญญาอนุญาต
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` ส่งคำขอเครื่องมือที่ไม่มีผลข้างเคียงและมีเวลาจำกัดไปยังเส้นทาง DSH โดยไม่สร้าง worker หรือเปลี่ยนการผูก อาจใช้ token คำถามที่ยังไม่ตอบทำให้หยุดด้วย `needs_input` รับคำตอบจากผู้ใช้แล้วส่งใหม่ ใช้สิทธิ์ของโฮสต์เดิม ไม่เพิ่ม OS sandbox
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

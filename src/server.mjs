@@ -12,7 +12,7 @@ import { acquireCwdLock, releaseCwdLockByJobId, updateCwdLockHolder, getCwdLocks
 import { resolveWorkerCwd } from './paths.mjs';
 import { detectOrchestrator } from './process-info.mjs';
 
-const server = new McpServer({ name: 'dsh-crew', version: '0.1.0-rc.13' });
+const server = new McpServer({ name: 'dsh-crew', version: '0.1.0-rc.14' });
 
 const tierSchema = z.enum(['flash', 'pro']).optional().describe('Worker model tier. flash = mechanical, well-scoped work (single-file edits, lookups, formatting); pro = multi-file changes, debugging, design judgment. Omit to use the session default. Ignored when worker= is set.');
 const effortSchema = z.enum(['off', 'high', 'max']).optional().describe('Reasoning effort for the worker. Omit to use the session default. With worker= it only applies when passed explicitly and the profile supports it (agy maps to low/medium/high).');
@@ -236,6 +236,16 @@ server.registerTool('dsh_run_worker', {
   return text(job);
 });
 
+server.registerTool('dsh_worker_probe', {
+  title: 'Probe a configured worker model route',
+  description: 'Explicitly test one DSH-configured provider/model with a small no-op tool-call request. Requires the hub. Does not start a worker, touch files, or change bindings; it may consume one model request. A listed provider is not proof of agent/tool support. Results are observations at checked_at, not a permanent capability guarantee.',
+  inputSchema: { tier: z.enum(['flash', 'pro']).optional(), provider: z.string().optional(), model: z.string().optional() },
+}, async ({ tier, provider, model }) => {
+  if (!(await hubAvailable())) return text({ status: 'hub_unavailable', tool_call_verified: false });
+  const bound = bindingForTier(tier ?? sessionConfig.default_tier);
+  return text(await hub.probe({ provider: provider?.trim() || bound.provider, model: model?.trim() || bound.model }));
+});
+
 server.registerTool('dsh_worker_config', {
   title: 'Session worker configuration',
   description: 'Read or update session-level worker settings: enable/disable dispatch, default tier/effort/timeout, execution mode (auto = prefer hub, hub = require the DSH hub, standalone = never use it), tier policy, failure escalation, and which LLM route each tier dispatches to. Call with no arguments to read. To run workers on a local model (Ollama and the like), configure that provider ONCE in DSH and then name it here with flash_provider/flash_model or pro_provider/pro_model — this plugin never defines providers of its own. available_providers lists what the host has configured (hub mode only); bindings shows what each tier currently resolves to. The output includes worker_profiles — the external-CLI backends (agy, grok) usable via the worker= parameter of dsh_run_worker / dsh_spawn_worker — and origin, the inherited worker→worker dispatch chain with its depth limit. Session-only.',
@@ -284,7 +294,7 @@ server.registerTool('dsh_worker_config', {
       ? { providers_warning: `DSH has no provider route named ${unknown.map((t) => JSON.stringify(bindings[t].provider)).join(', ')} (bound to: ${unknown.join(', ')}). Configure it in DSH first, or these dispatches will fail.` }
       : {}),
     ...(custom.length > 0
-      ? { route_caveat: 'Appearing in available_providers only means an adapter is registered, NOT that it can run a worker. Measured: a route registered purely to re-route another provider fails a dispatch with "registration.adapter.prepareCall is not a function". Nor does DSH report tool-calling support anywhere, and a worker that cannot call tools returns prose and touches no files. A tier bound to a custom route is therefore UNVERIFIED until you dispatch to it once.' }
+      ? { route_caveat: 'Appearing in available_providers only means an adapter is registered, NOT that it can run a worker. Measured: a route registered purely to re-route another provider fails a dispatch with "registration.adapter.prepareCall is not a function". Nor does DSH report tool-calling support anywhere, and a worker that cannot call tools returns prose and touches no files. A tier bound to a custom route is therefore UNVERIFIED until you call dsh_worker_probe for the configured route; the probe observes one request and is not a permanent capability guarantee.' }
       : {}),
     worker_profiles: listProfiles(),
     origin: { chain: INHERITED_ORIGIN.chain, depth: INHERITED_ORIGIN.depth, depth_limit: depthLimitNow() },

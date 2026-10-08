@@ -43,6 +43,7 @@ const PKG_NAME = '@zseven-w/dsh-crew';
 const EXPECTED_TOOLS = [
   'dsh_run_worker',
   'dsh_worker_config',
+  'dsh_worker_probe',
   'dsh_spawn_worker',
   'dsh_worker_status',
   'dsh_worker_result',

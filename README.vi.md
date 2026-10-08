@@ -469,3 +469,12 @@ Runtime dependencies chỉ có `@modelcontextprotocol/sdk` và `zod`; mọi gói
 ## Giấy phép
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` gửi một yêu cầu công cụ không tác động, có thời hạn tới tuyến đã cấu hình trong DSH, không tạo worker hay đổi liên kết. Có thể dùng token. Câu hỏi chưa trả lời dừng worker với `needs_input`; lấy câu trả lời của người dùng rồi giao lại. Kế thừa quyền của máy chủ, không thêm OS sandbox.
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

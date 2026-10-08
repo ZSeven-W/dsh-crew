@@ -42,6 +42,7 @@ async function call(path, init) {
 const MAX_POLL_SLICE_SECONDS = 60;
 
 export const hub = {
+  probe: (binding) => call('/worker-probe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(binding) }).then(b => b.result),
   spawn: (spec) => call('/jobs', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

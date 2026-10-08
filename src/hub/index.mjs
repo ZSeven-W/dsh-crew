@@ -9,6 +9,8 @@ import { homedir } from 'node:os';
 import { isAbsoluteCwd, canonicalCwd } from '../paths.mjs';
 import { createShardWriter, readMergedStatus } from '../status-shard.mjs';
 import { procAlive, killWorkerProcess, parsePid, ProcKillRefused } from '../proc-kill.mjs';
+import { installWorkerQuestionHandoff } from '../worker-question.mjs';
+import { probeProvider } from '../provider-probe.mjs';
 
 // No @deepseek-ai imports here on purpose: this plugin is loaded into the
 // profile realm, and importing our own package copies would create duplicate
@@ -55,8 +57,8 @@ function userMessage(text) {
 export function unattendedQuestion() {
   const error = new Error(
     'no one is attending this dsh-crew worker session, so a question cannot be answered and must not be waited on. '
-    + 'If the choice is yours to make, take the option you would mark Recommended and state it as an assumption in your final message; '
-    + 'otherwise stop and put the unresolved question in your final message so the orchestrator can decide.',
+    + 'Stop and put the unresolved question in your final message so the orchestrator can obtain the required answer or approval. '
+    + 'An unanswered question grants no permission; never select an option automatically.',
   );
   error.name = 'UserQuestionError';
   error.code = 'UNATTENDED_WORKER';
@@ -92,12 +94,12 @@ function clipTask(task, cap = 300) {
   return task.length > cap ? task.slice(0, cap) + '…' : task;
 }
 
-class WorkerRegistry {
-  constructor(ctx) {
+export class WorkerRegistry {
+  constructor(ctx, shard = createShardWriter('hub')) {
     this.ctx = ctx;
     this.jobs = new Map();
     this.nextId = 1;
-    this.shard = createShardWriter('hub');
+    this.shard = shard;
   }
 
   view(job, withResult = false) {
@@ -107,6 +109,7 @@ class WorkerRegistry {
       cwd: job.cwd, turn: job.turn, step: job.step, currentTool: job.currentTool,
       toolCalls: job.toolCalls, tokens: job.tokens, mode: 'hub',
       startedAt: job.startedAt, endedAt: job.endedAt,
+      ...(job.questions === undefined ? {} : { questions: job.questions }),
     };
     if (withResult) {
       v.result = job.result; v.error = job.error; v.stopReason = job.stopReason;
@@ -193,15 +196,16 @@ class WorkerRegistry {
           if (presets !== undefined) await presets.mount(agentCtx, presetId);
           // Nobody attends a worker session, so a question would wait forever
           // (#13). Claim this agent's requests ahead of the Web answerer.
-          agentCtx.on('user-questions/request', () => Promise.reject(unattendedQuestion()), true);
+          installWorkerQuestionHandoff(agentCtx, job, () => this.publish());
           agentCtx.on('session/event', onEvent);
           agentCtx.on('agent/error', (payload) => {
             const err = payload?.error;
-            job.error = err?.message ?? String(err);
+            if (job.status !== 'needs_input') job.error = err?.message ?? String(err);
           });
         },
       });
       job.handle = handle;
+      if (job.status === 'needs_input') { await handle.dispose(); return; }
       try {
         // Group the worker session under the workspace of its cwd; create the
         // workspace when none exists yet (resolveByPath is exact-match, so a
@@ -217,8 +221,10 @@ class WorkerRegistry {
       await handle.agent.whenIdle();
       handle.agent.followup(userMessage(task));
       await handle.agent.whenIdle();
-      job.result = job.texts.at(-1) ?? '';
-      job.status = job.stopReason === 'completed' ? 'done' : 'failed';
+      if (job.status !== 'needs_input') {
+        job.result = job.texts.at(-1) ?? '';
+        job.status = job.stopReason === 'completed' ? 'done' : 'failed';
+      }
       if (job.status === 'failed' && !job.error) job.error = `turn ended: ${job.stopReason ?? 'unknown'}`;
       await this.ctx.sessions.flush(handle.agent.session);
     };
@@ -366,6 +372,21 @@ export async function apply(ctx) {
   ctx.inject(['webServer'], (webCtx) => {
     const webServer = webCtx.webServer;
     const disposers = [];
+
+    disposers.push(webServer.register({
+      kind: 'exact', path: `${ROUTE_BASE}/worker-probe`,
+      handler: async (req, res) => {
+        if (!isLoopbackRequest(req)) return sendJson(res, 403, { ok: false, error: 'loopback only' });
+        if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'POST only' }, { allow: 'POST' });
+        if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) return sendJson(res, 415, { ok: false, error: 'application/json required' });
+        try {
+          const body = await readBody(req);
+          if (typeof body.provider !== 'string' || body.provider.trim() === '' || typeof body.model !== 'string' || body.model.trim() === '') return sendJson(res, 400, { ok: false, error: 'provider and model required' });
+          const result = await probeProvider(ctx.llm, { provider: body.provider.trim(), model: body.model.trim() });
+          return sendJson(res, 200, { ok: true, result });
+        } catch { return sendJson(res, 400, { ok: false, error: 'invalid probe request' }); }
+      },
+    }));
 
     disposers.push(webServer.register({
       kind: 'exact', path: `${ROUTE_BASE}/ping`,
