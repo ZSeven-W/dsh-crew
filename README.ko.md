@@ -469,3 +469,12 @@ Runtime dependencies는 `@modelcontextprotocol/sdk`와 `zod`뿐입니다. 모든
 ## 라이선스
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe`는 DSH에 설정된 경로에 제한 시간 내 부작용 없는 도구 호출을 한 번 보내며 worker 생성이나 바인딩 변경을 하지 않습니다. 모델 token이 사용될 수 있습니다. 미응답 질문은 `needs_input`으로 멈추고 사용자 답변 후 다시 배정합니다. 호스트 권한을 상속하며 새 OS 샌드박스를 제공하지 않습니다.
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

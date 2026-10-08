@@ -467,3 +467,12 @@ node scripts/smoke.mjs          # dispatches one real flash task end to end
 ## ライセンス
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` は DSH に設定済みの経路へ時間制限付きの無作用ツール呼び出しを1回送り、worker の作成や設定変更は行いません。モデルの token を使う場合があります。未回答の質問では `needs_input` で停止し、利用者の回答後に再派遣します。ホストの権限を継承し、新しい OS サンドボックスは提供しません。
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

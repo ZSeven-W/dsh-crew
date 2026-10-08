@@ -467,3 +467,12 @@ node scripts/smoke.mjs          # 真实派发一个 flash 任务做端到端自
 ## 许可
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` 对 DSH 已配置的路线发送一次有时限的无副作用工具调用探测，不创建 worker、不改变绑定，但可能消耗模型 token。worker 未获回答时以 `needs_input` 停止；获得用户所需回答后重新派发。沿用宿主权限，不宣称新增操作系统沙箱。
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

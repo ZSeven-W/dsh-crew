@@ -469,3 +469,12 @@ Runtime bağımlılıkları yalnızca `@modelcontextprotocol/sdk` ve `zod`'dur; 
 ## Lisans
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe`, DSH içindeki yapılandırılmış rotaya süre sınırlı ve etkisiz bir araç isteği gönderir; worker başlatmaz veya bağları değiştirmez. Token kullanabilir. Yanıtsız soru workerı `needs_input` ile durdurur; kullanıcı yanıtından sonra yeniden gönderin. Ana makine izinleri devralınır, yeni OS sandbox sunulmaz.
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

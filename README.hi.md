@@ -469,3 +469,12 @@ node scripts/smoke.mjs          # dispatches one real flash task end to end
 ## लाइसेंस
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` DSH में कॉन्फ़िगर किए मार्ग पर सीमित समय का एक निष्प्रभावी टूल अनुरोध भेजता है; worker या binding नहीं बदलते। मॉडल token लग सकते हैं। अनुत्तरित प्रश्न worker को `needs_input` पर रोकता है; उपयोगकर्ता का उत्तर मिलने पर फिर भेजें। होस्ट अनुमतियाँ विरासत में मिलती हैं, नया OS sandbox नहीं दिया जाता।
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

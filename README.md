@@ -469,3 +469,12 @@ Runtime dependencies are only `@modelcontextprotocol/sdk` and `zod`; every `@dee
 ## License
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` sends one bounded no-op tool-call request to a DSH-configured route, without starting a worker or changing bindings. It may use model tokens. An unanswered worker question stops the runtime with `needs_input`; obtain the required user answer and redispatch. Host permissions are inherited; no additional OS sandbox is claimed.
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```

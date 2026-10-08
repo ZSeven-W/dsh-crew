@@ -38,7 +38,7 @@ export function chainText(chain: any): string {
 
 /** Ordering rank: running → orphaned → everything else (finished). */
 function rankOf(j: any): number {
-  return j?.status === 'running' ? 0 : j?.status === 'orphaned' ? 1 : 2;
+  return j?.status === 'running' || j?.status === 'needs_input' ? 0 : j?.status === 'orphaned' ? 1 : 2;
 }
 
 /**
@@ -164,6 +164,7 @@ export function statusInfoOf(job: any, copy: any): { color: string; label: strin
     return { color: '#4a9eff', label: copy.statusRunning, title: copy.statusTitle(st) };
   }
   if (st === 'done') return { color: '#3fb950', label: copy.statusDone, title: copy.statusTitle(st) };
+  if (st === 'needs_input') return { color: '#d29922', label: copy.statusNeedsInput, title: copy.statusNeedsInput };
   if (st === 'cancelled') return { color: '#f85149', label: copy.statusCancelled, title: copy.statusTitle(st) };
   return { color: '#f85149', label: copy.statusFailed, title: copy.statusTitle(st ?? '?') };
 }
@@ -371,4 +372,3 @@ export function dueProcProbes(
   }
   return out;
 }
-

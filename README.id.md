@@ -469,3 +469,12 @@ Dependensi runtime hanya `@modelcontextprotocol/sdk` dan `zod`; setiap paket `@d
 ## Lisensi
 
 MIT
+
+
+### `dsh_worker_probe` / `needs_input`
+
+`dsh_worker_probe` mengirim satu permintaan alat tanpa efek dan berbatas waktu ke rute DSH, tanpa membuat worker atau mengubah binding. Token dapat terpakai. Pertanyaan tanpa jawaban menghentikan worker dengan `needs_input`; dapatkan jawaban pengguna lalu kirim ulang. Izin host diwarisi, tanpa OS sandbox baru.
+
+```js
+dsh_worker_probe({ tier: "flash" })
+```
