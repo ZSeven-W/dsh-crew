@@ -8,7 +8,7 @@ test('the hub preserves needs_input after disposal and exposes the unresolved qu
       assert.equal(disposed, true, 'runtime must be stopped before another step could run');
     });
   } };
-  const ctx = { get() {}, sessions: { async flush() {} }, agents: { async create(options) {
+  const ctx = { get() {}, llm: { async resolveModelInfo() { return {}; } }, sessions: { async flush() {} }, agents: { async create(options) {
     await options.setup({ on(name, fn) { if (name === 'user-questions/request') handler = fn; } });
     return { agent, dispose() { disposed = true; } };
   } } };

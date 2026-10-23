@@ -95,6 +95,9 @@ const COPY = {
     globalConfig: '全局配置',
     globalHint: '修改即时保存到 ~/.config/dsh-crew/config.json；CC / Codex 的新会话自动读取为默认值（会话内可用 /dsh-crew:config 临时覆盖）。',
     tier: '默认档位', effort: '默认推理', mode: '执行模式', timeout: '默认超时(秒)', hubUrl: 'Hub 地址',
+    permission: '子代理权限（仅 Hub）',
+    permissionDefault: '跟随 DSH 新会话默认权限',
+    permissionConfirm: '将之后所有 Crew Hub 子代理设为 Full access？它们将能修改工作区以外的文件，执行工具时不再询问审批。此设置只影响新建 Crew 子代理，可随时改回。',
     tierPolicy: '档位策略', escalate: '失败升档',
     tierPolicyDesc: { auto: 'auto · orchestrator 自选', 'flash-only': '只用 flash', 'pro-only': '只用 pro' },
     escalateHint: 'flash 失败自动用 pro 重试一次',
@@ -187,6 +190,9 @@ const COPY = {
     globalConfig: 'Global configuration',
     globalHint: 'Changes save instantly to ~/.config/dsh-crew/config.json; new CC / Codex sessions pick them up as defaults (override per session with /dsh-crew:config).',
     tier: 'Default tier', effort: 'Default effort', mode: 'Mode', timeout: 'Timeout (s)', hubUrl: 'Hub URL',
+    permission: 'Worker permissions (Hub only)',
+    permissionDefault: 'Follow DSH new-session permissions',
+    permissionConfirm: 'Use Full access for future Crew Hub workers? They can modify files outside the workspace and execute tools without approval prompts. This only affects newly created Crew workers and can be changed back.',
     tierPolicy: 'Tier policy', escalate: 'Escalate on failure',
     tierPolicyDesc: { auto: 'auto · orchestrator picks', 'flash-only': 'flash only', 'pro-only': 'pro only' },
     escalateHint: 'retry a failed flash run once on pro',
@@ -393,6 +399,7 @@ function WorkersPanel({ ctx }: { ctx: any }) {
   const [config, setConfig] = useState<any>(null);
   const [dynModels, setDynModels] = useState<Record<string, Array<{ value: string; label?: string }>>>({});
   const [presetRoster, setPresetRoster] = useState<{ defaultId?: string; presets: Array<{ id: string; name?: string; trust?: string }> }>({ presets: [] });
+  const [permissionOptions, setPermissionOptions] = useState<Array<{ value: string; name: string }>>([]);
   // Labels are built at render, not at fetch, so they follow a locale switch.
   // A shipped preset's file carries its Chinese name only; the host localizes
   // it by id, and only for trust "system" so a user preset that happens to
@@ -516,6 +523,7 @@ function WorkersPanel({ ctx }: { ctx: any }) {
       if (s.ok) setStatus(s.status);
       if (c.ok) setConfig((prev: any) => prev ?? c.config);
       if (pr.ok) setPresetRoster({ defaultId: pr.defaultId, presets: pr.presets ?? [] });
+      if (pr.ok) setPermissionOptions(pr.permissions?.defaultOptions ?? []);
     } catch { /* instance restarting */ }
   }, [get, mergeJobs]);
 
@@ -811,6 +819,11 @@ function WorkersPanel({ ctx }: { ctx: any }) {
 
         <div style={S.group}>{copy.groupRuntime}</div>
         {block(copy.cardRuntime, (<>
+          <label style={S.field}><span style={S.fieldLabel}>{copy.permission}</span>
+            <CustomSelect value={config.permission_preset ?? 'default'} onChange={(v) => {
+              if (v === 'danger-full-access' && v !== config.permission_preset && !window.confirm(copy.permissionConfirm)) return;
+              field('permission_preset', v);
+            }} options={[{ value: 'default', label: copy.permissionDefault }, ...permissionOptions.map(p => ({ value: p.value, label: p.name }))]} /></label>
           <label style={S.field}><span style={S.fieldLabel}>{copy.mode}</span>
             <CustomSelect value={config.mode} onChange={(v) => field('mode', v)}
               options={(['auto', 'hub', 'standalone'] as const).map((m) => ({ value: m, label: copy.modeDesc[m] }))} /></label>

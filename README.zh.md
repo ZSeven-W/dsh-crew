@@ -106,7 +106,7 @@ DSH Crew 面板同时是任务看板：每个 worker 任务——运行中或已
 ```
 Claude Code / Codex / Antigravity / Grok（orchestrator，模型不变）
   └─ ds-flash / ds-pro  ← 原生子代理壳（进度出现在宿主任务 UI）
-       └─ MCP: dsh_run_worker(tier, effort, cwd, worker=)
+       └─ MCP: dsh_spawn_worker / dsh_run_worker(tier, effort, cwd, worker=)
             ├─ worker="agy"/"grok" → 由该外部 CLI 干活（显式 opt-in）
             ├─ hub 可达 → DSH 内的会话（Web UI 可见，按 cwd 归组）
             └─ 否则     → dsh-jsonrpc-agent 独立 runtime（worker.cordis.yml）
@@ -247,6 +247,10 @@ cp codex/agents/*.toml ~/.codex/agents/    # 全局或项目级 .codex/agents/
 - 交互 TUI 里选 "spawn ds-pro to ..." 派发任务，Active/Done 面板显示进度
 - `codex exec` 模式也可直接调 `dsh_run_worker`
 
+随包提供的 Codex 角色会异步派发、立即报告 job ID，并以最长 30 秒的间隔读取结果，
+期间可通过 `dsh_worker_message` 转达反馈。后续复核继续使用同一个 DSH 会话。
+任务指定的 provider/model 在派发前设置，权限沿用已保存的 Crew 偏好。
+
 
 ### 会话命令
 
@@ -324,10 +328,37 @@ node src/install/cli.mjs grok
 | `dsh_spawn_worker` | 异步派发任务，返回 job id（用于并行 fan-out）；用 `dsh_worker_result` 取结果 |
 | `dsh_worker_status` | 查询全部 job 的实时进度（turn/step/当前工具/token）+ cwd 咨询锁 |
 | `dsh_worker_result` | 取结果，可指定 `wait_seconds` 等待 |
+| `dsh_worker_message` | 给**同一个** agent 发反馈或追加指令（`job_id`、`message`、`delivery`：`steer`/`followup`），保留它的会话、模型与权限；返回只是受理确认，不是完成 |
 | `dsh_worker_cancel` | 取消指定 job，终止其 runtime 进程 |
 | `dsh_worker_config` | 查看/设置本会话默认值（tier、effort、mode、timeout、policy、escalation），并列出 `worker_profiles` |
 
 进度同时镜像到 `~/.config/dsh-crew/status.d/`（每个写入方一个分片文件，statusline / 外部监控可读）。
+
+### 跟进已有的 worker
+
+一轮评审属于原来那个 worker 会话，而不是新起一个替身。`dsh_worker_message` 直接找到已经派出去的那个 job：
+
+| 字段 | 含义 |
+|---|---|
+| `job_id` | 要接着干的那个 Hub job（`hub-…`）。standalone 与外部 CLI worker 会被拒绝——只有 Hub worker 持有可恢复的会话。 |
+| `message` | 1–60000 字符的反馈或补充指令。 |
+| `delivery` | `steer`（默认）插进运行中的 worker，在它下一步读到；`followup` 排在当前轮之后，单独开一轮。 |
+
+- 处于空闲、`done`、`failed`、`needs_input` 的 worker 会在**同一个会话**里继续：runtime 已经不在时，hub 会恢复那个持久化会话。
+- 模型、effort 与权限预设保持该 job 派发时的设定——跟进不会重新协商它们。
+- 取消是终局：`cancelled` 的 worker 不能续，必须显式重新派一个新任务。
+- 这次调用只确认**受理**，不确认完成。最终结果用 `dsh_worker_result(job_id, wait_seconds)` 取；`lastMessage` 与 `continuationCount` 说明这条消息有没有被接受。
+- 只用于已有的、已授权的任务。worker 因提问停下（`needs_input`）时，答案要来自用户——自己编一个答案不等于授权。
+
+### 从终端调用这些工具
+
+已有对话里的客户端刷不出新的 MCP 工具清单时，`scripts/call-tool.mjs` 是同一个 Crew MCP server 的终端入口（不是浏览器传话，也不与任何 GUI 通信）：
+
+```bash
+echo '{"name":"dsh_worker_status","arguments":{}}' | node scripts/call-tool.mjs
+```
+
+stdin 接受一个 `{name, arguments}` 请求，或这种请求组成的数组；每条请求输出一行 JSON 结果，某次调用返回 `isError` 时进程以非零码结束。单次调用上限 120 秒，所以耗时长的 `dsh_worker_result(job_id, wait_seconds)` 应当分次轮询，而不是一次等到底。
 
 ## 派发护栏
 
@@ -339,6 +370,11 @@ node src/install/cli.mjs grok
 ## 派发手册（playbook）
 
 如何把活派好——flash vs pro、自包含任务简报、安全并行、结果验证，以及上面的护栏——随包按宿主分发：`/dsh-crew:playbook`（Claude Code skill）、`/dsh-playbook`（Codex prompt、Antigravity skill、Grok 命令）。
+
+这份手册立在两条规则上：
+
+- **先划所有权，再谈并行。** 并行任务必须彼此独立，且每个任务各自写清文件所有权；最终集成由 orchestrator 自己做，简报没写到的地方也由它兜底。两个 worker 都能改的文件没有主人，就是等着冲突。
+- **一条工作线只用一个 worker。** 反馈用 `dsh_worker_message` 回到同一个 agent。把每轮评审都变成一次新派发，既丢掉了让上一版答案成立的那段上下文，也把 token 花在重复读同样的东西上。
 
 ## 显式 CLI 后端
 
@@ -403,14 +439,22 @@ node src/install/cli.mjs grok
 
 ## Hub 模式
 
+Crew 的 **Worker permissions（仅 Hub）** 设置会为以后的 hub worker 保存下来。`default` 沿用 DSH 新会话的权限设置；换成别的预设要取得用户授权——Full access 允许工具在工作目录之外运行，且不弹审批。它不改变已有会话，也不改变 DSH 的全局默认值。hub 每次派发都会重新读取这个已保存的偏好；会话级的 `dsh_worker_config permission_preset=...` 覆盖在 reset 之前优先，`default` 则明确跟随 DSH。CLI 与 standalone worker 保持各自的权限规则。
+
+已保存的偏好会用于后续派发，无需用户反复选择。子代理仍须遵守分配的任务范围与仓库指令。
+
+推理强度只在该 provider/模型明确支持时才发送；不支持该控制的模型连 `off` 也不发。任务状态会报出 `effectiveEffort` 与实际派发时使用的 `permissionPreset`。
+
 本包同时是合法的 DSH bundle（`dsh.bundle` + `cordis.patch.yml`）。执行 `dsh plugin add dsh-crew` 装进 DSH Web profile 后：
 
 - **Worker 会话一等公民化**：以 first-class session 运行在 DSH host 里（`agents.create` + per-session model/effort waterfall + 默认 preset），出现在 Web UI 会话列表，随时可点开围观完整执行过程
 - **按工作目录归类**：Web UI 中按 cwd 管理 worker 会话
 - **Loopback API**：
   - `POST/GET /_dsh/dsh-crew/jobs`：spawn 任务、列表、长轮询结果、cancel
+  - `POST /_dsh/dsh-crew/jobs/{id}/messages`：给已有 job 发消息（`{message, delivery}`）——`dsh_worker_message` 走的就是这条
   - `GET /_dsh/dsh-crew/ping`：健康探测（MCP shim 靠它判断 hub 是否在跑）
   - `POST /_dsh/dsh-crew/install`：一键安装宿主集成——Claude Code / Codex / Antigravity / Grok（即 `src/install/` 的后端）
+- **任务记录**：hub 按宿主进程把 crew 自己的 job 记录持久化到 `~/.config/dsh-crew/hub-jobs/<宿主 PID>.json`。同一宿主进程内组件重载会重新加载这些记录，worker 会话仍然可寻址——重载时在跑的任务会回成 `failed`、`stopReason: "host_reloaded"`，用 `dsh_worker_message` 跟一句就能接着跑同一个会话。由于每个文件按宿主 PID 命名、不同宿主进程从不写同一个文件，**跨宿主重启**的自动恢复不作承诺：请对照工作树核实，再显式重派或续跑。
 - **自动探测**：各宿主的 MCP shim 自动探测 hub（`DSHPLUGIN_CREW_HUB` 环境变量，默认 `http://127.0.0.1:3080`）
   - DSH Web 在跑 → job 进 hub 模式（`mode: "hub"`）
   - 没跑 → 回落 standalone runtime

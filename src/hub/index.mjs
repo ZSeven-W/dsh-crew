@@ -11,6 +11,7 @@ import { createShardWriter, readMergedStatus } from '../status-shard.mjs';
 import { procAlive, killWorkerProcess, parsePid, ProcKillRefused } from '../proc-kill.mjs';
 import { installWorkerQuestionHandoff } from '../worker-question.mjs';
 import { probeProvider } from '../provider-probe.mjs';
+import { createHubJobStore } from './job-store.mjs';
 
 // No @deepseek-ai imports here on purpose: this plugin is loaded into the
 // profile realm, and importing our own package copies would create duplicate
@@ -95,25 +96,43 @@ function clipTask(task, cap = 300) {
 }
 
 export class WorkerRegistry {
-  constructor(ctx, shard = createShardWriter('hub')) {
+  constructor(ctx, shard = createShardWriter('hub'), store = null) {
     this.ctx = ctx;
     this.jobs = new Map();
     this.nextId = 1;
     this.shard = shard;
+    this.store = store;
+    for (const saved of store?.load() ?? []) {
+      this.jobs.set(saved.id, { ...saved, handle: null, waiters: [], texts: [],
+        ...(saved.status === 'running' ? { status: 'failed', stopReason: 'host_reloaded',
+          error: 'Hub reloaded before completion; send an explicit follow-up to resume this session.' } : {}) });
+    }
+  }
+
+  persist() {
+    this.store?.save([...this.jobs.values()].map(job => ({
+      ...this.view(job, true), task: job.task, presetId: job.presetId,
+      history: job.history ?? [], lastMessage: job.lastMessage,
+    })));
   }
 
   view(job, withResult = false) {
     const v = {
       id: job.id, sessionId: job.sessionId, tier: job.tier, model: job.model, provider: job.provider,
-      effort: job.effort, status: job.status, source: job.source, task: clipTask(job.task),
+      effort: job.effort, effectiveEffort: job.effectiveEffort, permissionPreset: job.permissionPreset,
+      status: job.status, source: job.source, task: clipTask(job.task),
       cwd: job.cwd, turn: job.turn, step: job.step, currentTool: job.currentTool,
       toolCalls: job.toolCalls, tokens: job.tokens, mode: 'hub',
       startedAt: job.startedAt, endedAt: job.endedAt,
+      lastMessage: job.lastMessage ?? null,
+      progress: job.texts?.at(-1)?.slice(-1200) ?? null,
+      continuationCount: job.history?.length ?? 0,
       ...(job.questions === undefined ? {} : { questions: job.questions }),
     };
     if (withResult) {
       v.result = job.result; v.error = job.error; v.stopReason = job.stopReason;
       v.reasonDetail = job.reasonDetail;
+      v.history = job.history ?? [];
     }
     return v;
   }
@@ -122,7 +141,7 @@ export class WorkerRegistry {
     this.shard.publish([...this.jobs.values()].map((j) => this.view(j)));
   }
 
-  async spawn({ task, tier = 'flash', effort = 'max', cwd, source = 'api', provider, model, preset }) {
+  async spawn({ task, tier = 'flash', effort = 'max', cwd, source = 'api', provider, model, preset, permissionPreset }) {
     if (!TIERS.includes(tier)) throw new Error(`unknown tier "${tier}"`);
     // An explicit {provider, model} from the caller wins (the MCP process owns
     // session-level overrides, exactly as it does for presets); otherwise the
@@ -138,10 +157,31 @@ export class WorkerRegistry {
     const cwdPath = canonicalCwd(cwd);
     await this.ctx.get('loader')?.await();
 
+    const cfg = this.getConfig?.() ?? {};
+    const wantedPermission = permissionPreset ?? cfg.permission_preset ?? 'default';
+    if (typeof wantedPermission !== 'string' || !wantedPermission.trim()) throw new Error('permission preset must be a non-empty string');
+    const permissions = this.ctx.get('permissionPresets');
+    if (wantedPermission !== 'default') {
+      if (!permissions) throw new Error('this DSH host does not support permission presets');
+      permissions.resolve(wantedPermission);
+    }
+
+    // An effort such as "off" is still an explicit model control. DSH rejects
+    // every explicit value when the exact route exposes no reasoning capability.
+    // Keep supported-model validation in DSH, but omit the field completely for
+    // models without that capability, including values filled by Crew defaults.
+    const modelInfo = await this.ctx.llm.resolveModelInfo(resolvedProvider, resolvedModel);
+    const effectiveEffort = modelInfo.reasoning === undefined ? undefined : effort;
+    const selection = {
+      provider: resolvedProvider, model: resolvedModel,
+      ...(effectiveEffort === undefined ? {} : { reasoningEffort: effectiveEffort }),
+    };
+
     const id = `hub-${this.nextId++}-${Date.now().toString(36)}`;
     const sessionId = `session-${randomUUID()}`;
     const job = {
-      id, sessionId, tier, model: resolvedModel, provider: resolvedProvider, effort, task, source, cwd: cwdPath,
+      id, sessionId, tier, model: resolvedModel, provider: resolvedProvider, effort,
+      effectiveEffort: effectiveEffort ?? null, permissionPreset: null, task, source, cwd: cwdPath,
       status: 'running', turn: 0, step: 0, currentTool: null, toolCalls: 0,
       tokens: { input: 0, output: 0, reasoning: 0 },
       startedAt: new Date().toISOString(), endedAt: null,
@@ -150,13 +190,12 @@ export class WorkerRegistry {
     };
     this.jobs.set(id, job);
 
-    const selection = { provider: resolvedProvider, model: resolvedModel, reasoningEffort: effort };
     const presets = this.ctx.get('agentPresets');
-    const cfg = this.getConfig?.() ?? {};
     const wanted = preset ?? (tier === 'flash' ? cfg.preset_flash : cfg.preset_pro);
     const presetId = presets === undefined
       ? undefined
       : (await presets.resolve(!wanted || wanted === 'default' ? undefined : wanted)).id;
+    job.presetId = presetId;
 
     const onEvent = (session, event) => {
       switch (event.type) {
@@ -185,6 +224,9 @@ export class WorkerRegistry {
       }
       this.publish();
     };
+    job.onEvent = onEvent;
+    let markReady;
+    job.ready = new Promise(resolve => { markReady = resolve; });
 
     const run = async () => {
       const handle = await this.ctx.agents.create({
@@ -205,7 +247,16 @@ export class WorkerRegistry {
         },
       });
       job.handle = handle;
-      if (job.status === 'needs_input') { await handle.dispose(); return; }
+      if (job.status !== 'running') { await handle.dispose(); return; }
+      // Use the host's canonical setter before any task is queued. This is an
+      // explicit Crew preference, never inferred from another worker's access.
+      try {
+        if (wantedPermission !== 'default') permissions.set(handle.agent.session, wantedPermission);
+        job.permissionPreset = permissions?.current(handle.agent.session) ?? null;
+      } catch (error) {
+        await handle.dispose();
+        throw error;
+      }
       try {
         // Group the worker session under the workspace of its cwd; create the
         // workspace when none exists yet (resolveByPath is exact-match, so a
@@ -219,9 +270,11 @@ export class WorkerRegistry {
         this.ctx.logger?.warn?.(`dsh-crew: workspace attach failed for ${cwdPath}: ${err?.message ?? err}`);
       }
       await handle.agent.whenIdle();
+      if (job.status !== 'running') return;
       handle.agent.followup(userMessage(task));
+      markReady();
       await handle.agent.whenIdle();
-      if (job.status !== 'needs_input') {
+      if (job.status === 'running') {
         job.result = job.texts.at(-1) ?? '';
         job.status = job.stopReason === 'completed' ? 'done' : 'failed';
       }
@@ -239,10 +292,117 @@ export class WorkerRegistry {
         job.currentTool = null;
         this.publish();
         for (const w of job.waiters.splice(0)) w();
+        markReady();
+        this.persist();
       });
 
     this.publish();
+    this.persist();
     return job;
+  }
+
+  async message(id, { message, delivery = 'steer' } = {}) {
+    const job = this.jobs.get(id);
+    if (!job) return undefined;
+    if (typeof message !== 'string' || !message.trim() || message.length > 60000) {
+      throw new Error('message must contain 1 to 60000 characters');
+    }
+    if (!['steer', 'followup'].includes(delivery)) throw new Error('delivery must be steer or followup');
+    const pending = (job.messageQueue ?? Promise.resolve()).then(async () => {
+      job.deliveryInProgress = true;
+      try { return await this.deliver(job, message, delivery); }
+      finally { job.deliveryInProgress = false; }
+    });
+    job.messageQueue = pending.catch(() => {});
+    return pending;
+  }
+
+  async deliver(job, message, delivery) {
+    const id = job.id;
+    if (job.status === 'cancelled') throw new Error('cancelled worker cannot be continued; start a new job explicitly');
+    await job.ready;
+    if (job.status === 'cancelled') throw new Error('worker was cancelled while preparing the message');
+    const running = job.status === 'running';
+    if (!running) {
+      await job.promise;
+      const conflict = [...this.jobs.values()].find(other => other.id !== id && other.status === 'running' && other.cwd === job.cwd);
+      if (conflict) throw new Error(`workspace already held by running job ${conflict.id}`);
+      if (!job.handle) await this.restore(job);
+    }
+    if (job.status === 'cancelled') {
+      await job.handle?.dispose();
+      throw new Error('worker was cancelled while preparing the message');
+    }
+    if (!job.handle) throw new Error('worker session did not initialize; cannot deliver a message');
+    const method = running && delivery === 'steer' ? 'steer' : 'followup';
+    if (typeof job.handle.agent[method] !== 'function') throw new Error(`DSH host does not support ${method}`);
+    if (!running) {
+      (job.history ??= []).push({ result: job.result, error: job.error, status: job.status,
+        stopReason: job.stopReason, startedAt: job.startedAt, endedAt: job.endedAt });
+      Object.assign(job, { status: 'running', result: null, error: null, stopReason: null,
+        reasonDetail: null, questions: undefined, texts: [], endedAt: null,
+        startedAt: new Date().toISOString() });
+    }
+    const input = userMessage(message);
+    try { job.handle.agent[method](input); }
+    catch (error) {
+      if (!running) { job.status = 'failed'; job.error = error.message; job.endedAt = new Date().toISOString(); this.publish(); this.persist(); }
+      throw error;
+    }
+    job.lastMessage = { id: input.id, delivery: method, acceptedAt: new Date().toISOString() };
+    if (!running) {
+      job.promise = (async () => {
+        await job.handle.agent.whenIdle();
+        if (job.status === 'running') {
+          job.result = job.texts.at(-1) ?? '';
+          job.status = job.stopReason === 'completed' ? 'done' : 'failed';
+          if (job.status === 'failed' && !job.error) job.error = `turn ended: ${job.stopReason ?? 'unknown'}`;
+        }
+        await this.ctx.sessions.flush(job.handle.agent.session);
+      })().catch(error => {
+        if (job.status === 'running') job.status = 'failed';
+        job.error ??= error?.message ?? String(error);
+      }).finally(() => {
+        job.endedAt = new Date().toISOString();
+        job.currentTool = null;
+        this.publish(); this.persist();
+        for (const wake of job.waiters.splice(0)) wake();
+      });
+    }
+    this.publish(); this.persist();
+    return job;
+  }
+
+  async restore(job) {
+    // Only registry-owned session ids are restored; arbitrary DSH chats cannot be
+    // addressed through this endpoint. The persisted session retains its access.
+    const presets = this.ctx.get('agentPresets');
+    const selection = { provider: job.provider, model: job.model,
+      ...(job.effectiveEffort == null ? {} : { reasoningEffort: job.effectiveEffort }) };
+    job.handle = await this.ctx.agents.resume({ resumeSessionId: job.sessionId,
+      agentOptions: { provider: job.provider, model: job.model },
+      setup: async agentCtx => {
+        installModelSelection(agentCtx, { current: selection, assembled: undefined });
+        if (presets !== undefined) await presets.mount(agentCtx, (await presets.resolve(job.presetId)).id);
+        installWorkerQuestionHandoff(agentCtx, job, () => this.publish());
+        agentCtx.on('session/event', (_session, event) => {
+          if (event.type === 'step/start') { job.turn = event.data?.turn ?? job.turn; job.step = event.data?.step ?? job.step; }
+          if (event.type === 'tool/call') { job.currentTool = event.data?.name ?? null; job.toolCalls++; }
+          if (event.type === 'tool/result') job.currentTool = null;
+          if (event.type === 'assistant/message') {
+            const text = (event.data?.message?.content ?? []).filter(c => c?.type === 'text').map(c => c.text).join('');
+            if (text) job.texts.push(text);
+            const usage = event.data?.usage;
+            if (usage) { job.tokens.input += usage.inputTokens ?? 0; job.tokens.output += usage.outputTokens ?? 0; job.tokens.reasoning += usage.reasoningTokens ?? 0; }
+          }
+          if (event.type === 'turn/end') { job.stopReason = event.data?.reason?.kind ?? null; job.reasonDetail = event.data?.reason; }
+          this.publish();
+        });
+        agentCtx.on('agent/error', payload => { if (job.status !== 'needs_input') job.error = payload?.error?.message ?? String(payload?.error); });
+      },
+    });
+    await job.handle.agent.whenIdle();
+    job.permissionPreset = this.ctx.get('permissionPresets')?.current(job.handle.agent.session) ?? job.permissionPreset;
   }
 
   async wait(id, timeoutMs) {
@@ -259,11 +419,12 @@ export class WorkerRegistry {
   async cancel(id) {
     const job = this.jobs.get(id);
     if (!job) return undefined;
-    if (job.status === 'running') {
+    if (job.status === 'running' || job.deliveryInProgress) {
       job.status = 'cancelled';
       job.error = 'cancelled by request';
       try { await job.handle?.dispose(); } catch {}
       this.publish();
+      this.persist();
     }
     return job;
   }
@@ -340,7 +501,7 @@ async function readBody(req, limit = 64 * 1024) {
 
 export async function apply(ctx) {
   seedLangFromHost(ctx);
-  const hub = new WorkerRegistry(ctx);
+  const hub = new WorkerRegistry(ctx, createShardWriter('hub'), createHubJobStore(CONFIG_DIR, ctx.logger));
   try {
     const { readGlobalConfig } = await import('../install/install.mjs');
     hub.getConfig = () => readGlobalConfig();
@@ -476,6 +637,14 @@ export async function apply(ctx) {
             if (!job) return sendJson(res, 404, { ok: false, error: 'no such job' });
             return sendJson(res, 200, { ok: true, job: hub.view(job, true) });
           }
+          if (req.method === 'POST' && parts.length === 2 && parts[1] === 'messages') {
+            if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+              return sendJson(res, 415, { ok: false, error: 'application/json required' });
+            }
+            const job = await hub.message(parts[0], await readBody(req));
+            if (!job) return sendJson(res, 404, { ok: false, error: 'no such job' });
+            return sendJson(res, 200, { ok: true, job: hub.view(job, true) });
+          }
           return sendJson(res, 404, { ok: false, error: 'unknown jobs endpoint' });
         } catch (err) {
           return sendJson(res, 400, { ok: false, error: err?.message ?? String(err) });
@@ -507,11 +676,13 @@ export async function apply(ctx) {
         if (!isLoopbackRequest(req)) return sendJson(res, 403, { ok: false, error: 'loopback only' });
         try {
           const presets = ctx.get('agentPresets');
-          if (presets === undefined) return sendJson(res, 200, { ok: true, presets: [] });
+          const permissions = ctx.get('permissionPresets')?.catalog();
+          if (presets === undefined) return sendJson(res, 200, { ok: true, presets: [], permissions });
           const list = await presets.list();
           return sendJson(res, 200, {
             ok: true,
             defaultId: presets.defaultId,
+            permissions,
             presets: list.map((p) => ({ id: p.id, name: p.name ?? p.id, trust: p.trust })),
           });
         } catch (err) {

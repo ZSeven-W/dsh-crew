@@ -30,6 +30,8 @@ const sessionConfig = {
   enabled: true,
   default_tier: globalDefaults.default_tier,
   default_effort: globalDefaults.default_effort,
+  // Undefined lets the hub read the latest saved preference for each dispatch.
+  permission_preset: undefined,
   mode: globalDefaults.mode, // auto | hub | standalone
   default_timeout_seconds: globalDefaults.default_timeout_seconds,
   tier_policy: globalDefaults.tier_policy, // auto | flash-only | pro-only
@@ -124,9 +126,9 @@ async function acquireDispatchLock({ cwd, backend, mode, allowConcurrent }) {
 }
 
 function dispatchDisabled() {
-  return text({
+  return { ...text({
     error: 'worker dispatch is disabled for this session (set via dsh_worker_config). Report this to the user instead of doing the task yourself.',
-  });
+  }), isError: true };
 }
 
 async function resolveMode() {
@@ -188,7 +190,7 @@ server.registerTool('dsh_run_worker', {
       }
       let spawned;
       try {
-        spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t), ...bindingForTier(t), origin_chain: origin.origin.chain, origin_depth: origin.origin.depth });
+        spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t), permissionPreset: sessionConfig.permission_preset, ...bindingForTier(t), origin_chain: origin.origin.chain, origin_depth: origin.origin.depth });
         updateCwdLockHolder({ cwd: workDir, jobId: spawned.id });
         hubOrigins.set(spawned.id, origin.origin);
       } catch (err) {
@@ -253,6 +255,7 @@ server.registerTool('dsh_worker_config', {
     enabled: z.boolean().optional().describe('false = refuse all worker dispatch this session'),
     default_tier: z.enum(['flash', 'pro']).optional(),
     default_effort: z.enum(['off', 'high', 'max']).optional(),
+    permission_preset: z.string().min(1).optional().describe('Hub workers only: explicit user-authorized DSH permission preset, or "default" to follow DSH. Omit to use the latest saved Crew preference. Do not select Full access without user authorization.'),
     mode: z.enum(['auto', 'hub', 'standalone']).optional(),
     default_timeout_seconds: z.number().int().positive().max(7200).optional(),
     tier_policy: z.enum(['auto', 'flash-only', 'pro-only']).optional().describe('flash-only / pro-only clamp every dispatch to one tier'),
@@ -269,6 +272,7 @@ server.registerTool('dsh_worker_config', {
 }, async ({ reset, ...patch }) => {
   if (reset) {
     Object.assign(sessionConfig, { enabled: true, ...globalDefaults });
+    sessionConfig.permission_preset = undefined;
     sessionConfig.origin_depth_limit = DEFAULT_ORIGIN_DEPTH_LIMIT;
   }
   for (const [k, v] of Object.entries(patch)) if (v !== undefined) sessionConfig[k] = v;
@@ -343,7 +347,7 @@ server.registerTool('dsh_spawn_worker', {
     }
     let spawned;
     try {
-      spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t), ...bindingForTier(t), origin_chain: origin.origin.chain, origin_depth: origin.origin.depth });
+      spawned = await hub.spawn({ task, tier: t, effort: e, cwd: workDir, source: ORCHESTRATOR, preset: presetForTier(t), permissionPreset: sessionConfig.permission_preset, ...bindingForTier(t), origin_chain: origin.origin.chain, origin_depth: origin.origin.depth });
       updateCwdLockHolder({ cwd: workDir, jobId: spawned.id });
       hubOrigins.set(spawned.id, origin.origin);
     } catch (err) {
@@ -415,6 +419,29 @@ server.registerTool('dsh_worker_result', {
   if (!getJob(job_id)) return text({ error: `no such job: ${job_id}` });
   const job = await waitJob(job_id, wait_seconds > 0 ? wait_seconds * 1000 : 1);
   return text(jobView(job, { withResult: true }));
+});
+
+server.registerTool('dsh_worker_message', {
+  title: 'Message or continue a DSH worker',
+  description: 'Send review feedback or supplementary instructions to the SAME Hub worker, preserving its conversation, model and permissions. Default steer reaches a running worker at the next step; followup queues a separate turn. An idle/completed/needs-input worker continues in the same session. The response confirms acceptance, not completion: fetch dsh_worker_result afterwards. Only use for an existing authorized task; never replace missing human approval with an invented answer. Standalone and external CLI workers are unsupported.',
+  inputSchema: { job_id: z.string(), message: z.string().min(1).max(60000),
+    delivery: z.enum(['steer', 'followup']).default('steer') },
+}, async ({ job_id, message, delivery }) => {
+  if (!sessionConfig.enabled) return dispatchDisabled();
+  if (!job_id.startsWith('hub-')) return { ...text({ error: 'messaging requires a Hub worker job' }), isError: true };
+  if (!(await hubAvailable())) return { ...text({ error: 'hub not reachable' }), isError: true };
+  let lock;
+  try {
+    const previous = await hub.get(job_id);
+    if (previous.status !== 'running') {
+      lock = await acquireDispatchLock({ cwd: previous.cwd, backend: previous.provider ?? 'dsh', mode: 'hub', allowConcurrent: false });
+    }
+    const view = await hub.message(job_id, { message, delivery });
+    if (lock) updateCwdLockHolder({ cwd: view.cwd, jobId: view.id });
+    if (view.status !== 'running') lock?.release();
+    attachOrigin(view, view.id);
+    return text(view);
+  } catch (error) { lock?.release(); return { ...text({ error: error.message }), isError: true }; }
 });
 
 server.registerTool('dsh_worker_cancel', {

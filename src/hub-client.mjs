@@ -69,4 +69,7 @@ export const hub = {
     }
   },
   cancel: (id) => call(`/jobs/${id}/cancel`, { method: 'POST' }).then((b) => b.job),
+  message: (id, spec) => call(`/jobs/${encodeURIComponent(id)}/messages`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(spec),
+  }).then(b => b.job),
 };

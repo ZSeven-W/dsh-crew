@@ -1,8 +1,8 @@
 ---
-description: How to dispatch well — choosing flash vs pro, writing self-contained briefs, parallelism, verifying results, and guardrails
+description: How to dispatch well — choosing flash vs pro, writing self-contained briefs, parallelism with explicit file ownership, iterating in the same worker, verifying results, and guardrails
 ---
 
-When the user asks how to dispatch work to DSH workers — tier choice, writing a brief, parallelism, verifying results, guardrails — answer from the playbook below. Point to the relevant section rather than reciting it whole.
+When the user asks how to dispatch work to DSH workers — tier choice, writing a brief, parallelism, following up on an existing worker, verifying results, guardrails — answer from the playbook below. Point to the relevant section rather than reciting it whole.
 
 # DSH Crew — Dispatch Playbook
 
@@ -38,21 +38,31 @@ Bad: "fix the auth bug". Good: "In /abs/path/repo/src/auth.ts the token refresh 
 ## 3. Parallelism
 
 - Default: one worker per repo/workspace. The cwd advisory lock enforces this — a second dispatch into a held workspace is refused with the holder's job id, not queued.
-- Parallel workers in one repo are only safe with explicitly disjoint file territories AND a named owner for every seam where the two halves meet. Unowned seams are where integration gaps happen; write the seam owner's name into each brief.
+- Parallel workers are only safe when the tasks are genuinely independent and every one of them has an explicit file ownership list — files, or directories, that this worker alone may write. Write that list into the brief; do not leave territory implicit.
+- The orchestrator does the final integration itself: every seam where two territories meet has one named owner, and it is never left unowned. Unowned seams are where integration gaps happen — write the seam owner's name into each brief, and the orchestrator makes the final call.
 - allow_concurrent_cwd: true is only for read-only tasks. It is never a license for two writers.
 
-## 4. Verifying results
+## 4. Iterating in the same worker
+
+- Review feedback and follow-up instructions go back to the worker that did the work: `dsh_worker_message(job_id, message, delivery)`. It keeps that session's conversation, model, effort and permissions.
+- delivery: steer (default) is read by a running worker at its next step; followup queues a separate turn behind the current one. Use steer for a course correction while it works, followup for "next, also do X".
+- A worker that is idle, done, failed or needs_input continues in the same session — the runtime is resumed if it is gone. Spread one line of work across as few sessions as possible; each new agent re-reads the repo and re-learns what the last one knew.
+- Cancel is final: a cancelled worker cannot be continued. Start a new job, explicitly.
+- The call confirms acceptance, not completion (lastMessage / continuationCount show it was taken). Poll the real outcome with dsh_worker_result.
+- needs_input is not permission. Take the question to the user and relay their answer; never invent one so the worker can proceed.
+
+## 5. Verifying results
 
 - Trust artifacts, not claims. Check which files actually changed (git status / git diff) and run the verify scripts or tests the brief demanded.
 - A hub restart can orphan a job that then looks finished: if a result seems missing or stale, verify against the working tree and re-check dsh_worker_status before trusting the summary.
 - Require workers to report unverified claims honestly ("I did not run the tests") rather than simulating success. A "done" summary is not proof.
 
-## 5. Guardrails you may hit
+## 6. Guardrails you may hit
 
 - Origin-chain depth cap (3): worker→worker nesting deeper than 3 hops is refused; a cycle (the same backend + cwd appearing twice in the chain) is refused too. These refuse rather than queue — the fix is to wait, or to re-scope the task so a worker does not spawn another worker, never to bypass.
 - cwd lock refusal: the error names the holder (job id, backend, start time). Fix: wait for that job to settle, cancel it with dsh_worker_cancel, or re-scope to a different workspace. Refusals are readable errors, not bugs.
 
-## 6. Tool quick reference
+## 7. Tool quick reference
 
 | Tool | One line |
 |---|---|
@@ -60,5 +70,6 @@ Bad: "fix the auth bug". Good: "In /abs/path/repo/src/auth.ts the token refresh 
 | `dsh_spawn_worker` | Start a task in the background for fan-out; returns a job id, not a result. |
 | `dsh_worker_status` | Live progress of all jobs plus the cwd advisory locks. |
 | `dsh_worker_result` | Fetch a job's final result, optionally waiting wait_seconds. |
-| `dsh_worker_cancel` | Terminate a running job and release its cwd lock. |
+| `dsh_worker_message` | Send feedback or a follow-up to the same Hub worker (delivery steer/followup); accepted, not finished — poll the result. |
+| `dsh_worker_cancel` | Terminate a running job and release its cwd lock. Cancel is final; a cancelled worker cannot be continued. |
 | `dsh_worker_config` | Read/set session defaults (default_tier, default_effort, mode, default_timeout_seconds, tier_policy, escalate_on_failure) and list worker_profiles. |

@@ -106,7 +106,7 @@ The settings page installs and updates the Claude Code plugin, the Codex role fi
 ```
 Claude Code / Codex / Antigravity / Grok (orchestrator, keeps its own model)
   └─ ds-flash / ds-pro  ← native subagent shell (progress shows in the host's task UI)
-       └─ MCP: dsh_run_worker(tier, effort, cwd, worker=)
+       └─ MCP: dsh_spawn_worker / dsh_run_worker(tier, effort, cwd, worker=)
             ├─ worker="agy"/"grok" → that external CLI runs the task (explicit opt-in)
             ├─ hub reachable → session inside DSH (visible in the Web UI, grouped by cwd)
             └─ otherwise     → dsh-jsonrpc-agent runtime (worker.cordis.yml)
@@ -248,6 +248,11 @@ Role files come pre-configured with:
 - In interactive TUI, select "spawn ds-pro to ..." to dispatch tasks; Active/Done panels show progress
 - `codex exec` mode can also directly call `dsh_run_worker`
 
+The bundled Codex roles dispatch asynchronously, report the job ID immediately,
+and poll in intervals of at most 30 seconds so feedback can be relayed through
+`dsh_worker_message`. Further review continues the same DSH session. A requested
+provider/model is configured before dispatch; saved Crew permissions are retained.
+
 
 ### Session commands
 
@@ -326,10 +331,37 @@ Uninstall: `node src/install/cli.mjs uninstall-grok`
 | `dsh_spawn_worker` | Async dispatch, returns job id (for parallel fan-out); collect results with `dsh_worker_result` |
 | `dsh_worker_status` | Real-time progress of all jobs (turn/step/current tool/token) + cwd advisory locks |
 | `dsh_worker_result` | Fetch result, can specify `wait_seconds` to wait |
+| `dsh_worker_message` | Send feedback or a follow-up to the **same** agent (`job_id`, `message`, `delivery`: `steer`/`followup`), keeping its conversation, model and permissions; the reply confirms acceptance, not completion |
 | `dsh_worker_cancel` | Cancel specified job, terminate its runtime process |
 | `dsh_worker_config` | Read/set session defaults (tier, effort, mode, timeout, policy, escalation) and list `worker_profiles` |
 
 Progress is simultaneously mirrored to `~/.config/dsh-crew/status.d/` (one shard file per writer, can be read by statusline / external monitoring).
+
+### Messaging a worker you already have
+
+A review round belongs in the existing worker session, not in a replacement agent. `dsh_worker_message` addresses the job you already dispatched:
+
+| Field | Meaning |
+|---|---|
+| `job_id` | The Hub job to continue (`hub-…`). Standalone and external-CLI workers are refused — only Hub workers hold a resumable session. |
+| `message` | 1–60000 characters of feedback or supplementary instructions. |
+| `delivery` | `steer` (default) is injected into a running worker and read at its next step; `followup` queues a separate turn after the current one. |
+
+- A worker that is idle, `done`, `failed` or `needs_input` continues in the same session: the hub resumes the persisted session when its runtime is already gone.
+- Model, effort and permission preset stay what that job was dispatched with — continuing a worker never renegotiates them.
+- Cancel is final: a `cancelled` worker cannot be continued, so start a new job explicitly.
+- The call confirms **acceptance**, not completion. Fetch the outcome with `dsh_worker_result(job_id, wait_seconds)`; `lastMessage` and `continuationCount` tell you whether the message was taken.
+- Use it only for an existing, authorized task. When a worker stopped on a question (`needs_input`), the answer comes from the user — an invented answer is not approval.
+
+### Calling these tools from a terminal
+
+When an existing conversation's client cannot refresh its MCP tool list, `scripts/call-tool.mjs` is the terminal entry point into the same Crew MCP server (it is not a browser relay and never talks to a GUI):
+
+```bash
+echo '{"name":"dsh_worker_status","arguments":{}}' | node scripts/call-tool.mjs
+```
+
+Stdin takes either one `{name, arguments}` request or an array of them; each request prints one JSON result line, and the process exits non-zero once a call reports `isError`. Each call is capped at 120 seconds, so a long `dsh_worker_result(job_id, wait_seconds)` should be polled rather than waited out in a single call.
 
 ## Dispatch guardrails
 
@@ -341,6 +373,11 @@ Every dispatch is checked before anything spawns — refusals are readable error
 ## Dispatch playbook
 
 How to dispatch *well* — flash vs pro, self-contained briefs, safe parallelism, verifying results, and the guardrails above — is bundled as a per-host playbook: `/dsh-crew:playbook` (Claude Code skill), `/dsh-playbook` (Codex prompt, Antigravity skill, Grok command).
+
+Two rules the playbook is built on:
+
+- **Ownership before parallelism.** Parallel workers need independent, explicitly disjoint tasks, each with a written file ownership list; the orchestrator does the final integration itself and owns every seam the briefs leave open. A shared file with no owner is a merge conflict waiting to happen.
+- **One worker per thread of work.** Feedback goes back to the same agent with `dsh_worker_message`. Turning every review round into a fresh dispatch throws away the context that made the first answer possible and multiplies the tokens spent.
 
 ## Explicit CLI backends
 
@@ -405,14 +442,30 @@ Two integration methods:
 
 ## Hub mode
 
+Crew's **Worker permissions (Hub only)** setting is saved for future hub workers.
+`default` keeps DSH's new-session permission setting. Choose another preset only
+with the user's authorization; Full access permits tools outside the workspace
+without approval prompts. This does not change existing sessions or DSH's global
+default. The hub reads the saved preference at every dispatch. A session-level
+`dsh_worker_config permission_preset=...` override wins until reset; `default`
+explicitly follows DSH. CLI and standalone workers keep their own permission rules.
+The saved preference applies to subsequent dispatches without asking the user to
+select it again. Workers still follow the assigned task and repository instructions.
+
+Reasoning effort is sent only when the selected provider/model advertises that
+control; `off` is also omitted for models without it. Job status reports
+`effectiveEffort` and the actual `permissionPreset` used at dispatch.
+
 This package is also a valid DSH bundle (`dsh.bundle` + `cordis.patch.yml`). After installing into DSH Web profile with `dsh plugin add dsh-crew`:
 
 - **Worker sessions become first-class citizens**: run as first-class sessions in DSH host (`agents.create` + per-session model/effort waterfall + default preset), appear in Web UI session list, can be opened anytime to view complete execution
 - **Organize by working directory**: manage worker sessions by cwd in Web UI
 - **Loopback API**:
   - `POST/GET /_dsh/dsh-crew/jobs`: spawn tasks, list, long-poll results, cancel
+  - `POST /_dsh/dsh-crew/jobs/{id}/messages`: message an existing job (`{message, delivery}`) — the transport behind `dsh_worker_message`
   - `GET /_dsh/dsh-crew/ping`: health check (MCP shim uses this to detect if hub is running)
   - `POST /_dsh/dsh-crew/install`: one-click install of the host integrations — Claude Code / Codex / Antigravity / Grok (backend of `src/install/`)
+- **Job records**: the hub persists its own job records per host process under `~/.config/dsh-crew/hub-jobs/<host-pid>.json`. A component reload in the same host process reloads them, so a worker session stays addressable — the job that was mid-flight returns as `failed` with `stopReason: "host_reloaded"`, and a `dsh_worker_message` follow-up resumes that same session. Because each file is keyed by host PID and separate host processes never write the same file, automatic recovery **across a host restart** is not claimed: verify against the working tree, then re-dispatch or continue explicitly.
 - **Auto-detection**: the hosts' MCP shim auto-detects hub (`DSHPLUGIN_CREW_HUB` env var, default `http://127.0.0.1:3080`)
   - DSH Web running → jobs enter hub mode (`mode: "hub"`)
   - Not running → fall back to standalone runtime

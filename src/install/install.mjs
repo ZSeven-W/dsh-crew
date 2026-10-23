@@ -10,7 +10,7 @@ import { homedir } from 'node:os';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MARKETPLACE_NAME = 'dsh-crew';
 const PLUGIN_KEY = `dsh-crew@${MARKETPLACE_NAME}`;
-const MCP_TOOLS = ['dsh_run_worker', 'dsh_spawn_worker', 'dsh_worker_status', 'dsh_worker_result', 'dsh_worker_cancel'];
+const MCP_TOOLS = ['dsh_run_worker', 'dsh_spawn_worker', 'dsh_worker_status', 'dsh_worker_result', 'dsh_worker_message', 'dsh_worker_cancel'];
 
 function backup(file) {
   if (existsSync(file)) {
@@ -73,6 +73,8 @@ function CONFIG_DIR_HOME() { return join(homedir(), '.config', 'dsh-crew'); }
 export const GLOBAL_CONFIG_DEFAULTS = {
   default_tier: 'flash',
   default_effort: 'max',
+  // Hub workers follow DSH unless the user explicitly saves another preset.
+  permission_preset: 'default',
   mode: 'auto',
   default_timeout_seconds: 1800,
   hub_url: 'http://127.0.0.1:3080',
@@ -116,6 +118,10 @@ export function readGlobalConfig() {
 }
 
 export function writeGlobalConfig(patch) {
+  if (patch?.permission_preset !== undefined
+      && (typeof patch.permission_preset !== 'string' || !patch.permission_preset.trim())) {
+    throw new Error('permission_preset must be a non-empty string');
+  }
   mkdirSync(CONFIG_DIR_HOME(), { recursive: true });
   const next = { ...readGlobalConfig() };
   for (const [k, v] of Object.entries(patch ?? {})) {
