@@ -471,16 +471,22 @@ server.registerTool('dsh_worker_messages', {
 
 server.registerTool('dsh_worker_continue', {
   title: 'Continue a settled DSH worker',
-  description: 'Ask a finished (or failed, or cancelled) worker a follow-up question in the SAME session, so it keeps its context. The reply is a new job whose continued_from names the old one; use dsh_worker_result on the new id. Refused while the original is still running — use dsh_worker_message to steer a running worker instead.',
+  description: 'Ask a finished (or failed, or cancelled) worker a follow-up question in the SAME session, so it keeps its context. The reply is a new job whose continued_from names the old one; use dsh_worker_result on the new id. Refused while the original is still running — use dsh_worker_message to steer a running worker instead. After a host restart this MCP session no longer knows the jobs spawned before it, and the dispatcher that owned the job is gone: find the job id with dsh_worker_status all: true, then pass adopt: true to continue that worker instead of dispatching a new task.',
   inputSchema: {
     job_id: z.string().describe('the settled job to continue'),
     text: z.string().trim().min(1).max(MAX_MESSAGE_LENGTH).describe('the follow-up prompt; the worker still has its session context'),
     timeout_seconds: z.number().int().min(1).max(MAX_JOB_TIMEOUT_SECONDS).optional().describe('hard bound for the new job; omit for the hub/config default'),
+    adopt: z.boolean().optional().default(false).describe('true = continue a job spawned by an earlier MCP session (e.g. before a host restart); the job id must be known to the hub'),
   },
-}, async ({ job_id, text, timeout_seconds }) => {
+}, async ({ job_id, text: prompt, timeout_seconds, adopt = false }) => {
   // Continue runs text inside an existing session, which is stronger than
-  // reading its result: only a job this MCP session spawned may be continued.
-  if (!sessionJobIds.has(job_id)) return text({ error: `no such job in this session: ${job_id}` });
+  // reading its result: only a job this MCP session spawned may be continued,
+  // unless the caller explicitly adopts one from an earlier session. The
+  // session set is in memory, so it is empty after the host restarts.
+  // (`prompt`, not `text`: a `text` parameter would shadow the text() helper.)
+  if (!adopt && !sessionJobIds.has(job_id)) {
+    return text({ error: `no such job in this session: ${job_id} (pass adopt: true to continue a job from an earlier session)` });
+  }
   if (!(await hubAvailable())) return text({ error: 'hub not reachable' });
   const before = await currentJobView(job_id);
   if (before === undefined) return text({ error: `no such job: ${job_id}` });
@@ -493,7 +499,7 @@ server.registerTool('dsh_worker_continue', {
   }
   let job;
   try {
-    job = await hub.continueJob(job_id, text, timeout_seconds);
+    job = await hub.continueJob(job_id, prompt, timeout_seconds);
   } catch (err) {
     lock.release();
     return text({ error: err?.message ?? String(err) });
