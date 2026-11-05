@@ -106,6 +106,19 @@ function stallBoundSeconds(cfg) {
   return Number.isFinite(raw) && raw > 0 ? Math.min(MAX_BOUND_SECONDS, Math.floor(raw)) : 1800;
 }
 
+/**
+ * How long a settled job keeps its live agent for a warm dsh_worker_continue.
+ * After that the agent is disposed and a later continue resumes the persisted
+ * session instead (the cold path). Every live agent pins its whole session log,
+ * so keeping them forever grows the hub by megabytes per job until it runs out
+ * of heap. 0 releases the agent as soon as the job settles.
+ */
+function idleReleaseSeconds(cfg) {
+  const raw = cfg.idle_release_seconds;
+  if (raw === 0) return 0;
+  return Number.isFinite(raw) && raw > 0 ? Math.min(MAX_BOUND_SECONDS, Math.floor(raw)) : 7200;
+}
+
 export class WorkerRegistry {
   constructor(ctx, shard = createShardWriter('hub')) {
     this.ctx = ctx;
@@ -467,6 +480,42 @@ export class WorkerRegistry {
     }
     this.publish();
     for (const w of job.waiters.splice(0)) w();
+    this.scheduleIdleRelease(job);
+  }
+
+  /** Keep a settled job's live agent for a warm continue, then dispose it. */
+  scheduleIdleRelease(job) {
+    if (job.handle === undefined || job.handle === null) return;
+    clearTimeout(job._idleTimer);
+    const seconds = idleReleaseSeconds(this.getConfig?.() ?? {});
+    if (seconds === 0) { this.releaseIdle(job); return; }
+    job._idleTimer = setTimeout(() => this.releaseIdle(job), seconds * 1000);
+    job._idleTimer.unref?.();
+  }
+
+  /** Dispose a settled job's agent; a later continue takes the cold path. */
+  releaseIdle(job) {
+    clearTimeout(job._idleTimer);
+    job._idleTimer = undefined;
+    if (job.status === 'running') return;
+    const handle = job.handle;
+    if (handle === undefined || handle === null) return;
+    job.handle = undefined;
+    job.agentCtx = undefined;
+    job.log?.record('status', 'idle agent released');
+    try { Promise.resolve(handle.dispose?.()).catch(() => {}); } catch {}
+  }
+
+  /**
+   * The settled job on a session that still holds its live agent. After a
+   * continuation the agent belongs to the newest job, not the one named in
+   * the request.
+   */
+  liveOwner(sessionId) {
+    for (const job of this.jobs.values()) {
+      if (job.sessionId === sessionId && job.status !== 'running' && job.handle !== undefined && job.handle !== null) return job;
+    }
+    return undefined;
   }
 
   ownedJob(id, token) {
@@ -567,16 +616,25 @@ export class WorkerRegistry {
       // Preferred: the old agent is still live, so reusing its handle continues
       // the real session. Resuming the persisted session instead would fail
       // with "already owned by an active write handle" while that handle exists.
-      if (previous.handle !== undefined) {
-        job.ready = Promise.resolve(previous.handle);
+      const owner = this.liveOwner(previous.sessionId);
+      if (owner !== undefined) {
+        const live = owner.handle;
+        const ownerCtx = owner.agentCtx;
+        // The agent moves to this job: it is the one to dispose it later, and
+        // the old record must not release it mid-turn.
+        clearTimeout(owner._idleTimer);
+        owner._idleTimer = undefined;
+        owner.handle = undefined;
+        owner.agentCtx = undefined;
+        job.ready = Promise.resolve(live);
+        owner.eventTarget = job;
         previous.eventTarget = job;
-        const live = previous.handle;
         job.handle = live;
         // The continuation lives on the previous job's agent, so it owns that
         // agent's tool registry too; a chained continuation must find it here.
         // `handle.agent.ctx` is the scoped context the host passes to setup, so
         // a job created before this bookkeeping existed still has a way back.
-        job.agentCtx = previous.agentCtx ?? live.agent.ctx;
+        job.agentCtx = ownerCtx ?? live.agent.ctx;
         // The spawn-time tool (if the old job had a mailbox) already resolves
         // its mailbox per call, so reusing the agent must NOT register a second
         // one. An agent spawned without a token has no tool yet; if this
@@ -677,11 +735,12 @@ export class WorkerRegistry {
 
   async dispose() {
     for (const job of this.jobs.values()) {
-      if (job.status === 'running') {
-        const handle = job.handle;
-        job.handle = undefined;
-        try { await handle?.dispose(); } catch {}
-      }
+      clearTimeout(job._idleTimer);
+      job._idleTimer = undefined;
+      const handle = job.handle;
+      if (handle === undefined || handle === null) continue;
+      job.handle = undefined;
+      try { await handle.dispose(); } catch {}
     }
   }
 }
