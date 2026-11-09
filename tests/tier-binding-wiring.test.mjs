@@ -39,7 +39,14 @@ test('the hub no longer keeps its own tier -> model table', () => {
 
 test('the hub hands the resolved route to the model selection and to agents.create', () => {
   assert.ok(hub.includes('provider: resolvedProvider, model: resolvedModel'));
-  assert.ok(hub.includes('provider: selection.provider, model: selection.model'));
+  assert.ok(hub.includes('provider: selection.provider,'));
+  assert.ok(hub.includes('model: selection.model,'));
+  // The effort step preparation fixes and the one the request proposes must
+  // agree: agentOptions sets it before preparation, the hook re-applies the
+  // same value. Carrying it in only one of them makes the host reject the
+  // turn (DSH >= 0.2.2 compares the two).
+  assert.ok(hub.includes('reasoningEffort: selected.reasoningEffort'));
+  assert.ok(hub.includes('reasoningEffort: selection.reasoningEffort'));
 });
 
 test('the standalone harness gets the resolved route, not a hardcoded provider', () => {

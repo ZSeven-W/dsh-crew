@@ -17,7 +17,17 @@ import { probeProvider } from '../provider-probe.mjs';
 // module realms (symbol identity mismatches in the tool runtime). Everything
 // below is either plain data or inlined logic that only touches ctx APIs.
 
-/** Inlined from @deepseek-ai/dsh-agent model-selection.ts (same semantics). */
+/**
+ * Inlined from @deepseek-ai/dsh-agent model-selection.ts (same semantics).
+ *
+ * The host rejects a request whose reasoning effort differs from the one step
+ * preparation already fixed, so the effort here must match the value handed to
+ * `agents.create`'s agentOptions (see WorkerRegistry.spawn). Both sides carry
+ * the same `selection.reasoningEffort`; dropping it from agentOptions makes
+ * prep fix the adapter default, and dropping it here makes the request propose
+ * the adapter default instead — either way the two disagree and the host
+ * rejects the turn.
+ */
 function installModelSelection(agentCtx, selection) {
   agentCtx.on('system-prompt/assemble', async (_assembly, _cause, next) => {
     const selected = selection.current;
@@ -190,7 +200,14 @@ export class WorkerRegistry {
       const handle = await this.ctx.agents.create({
         sessionId,
         meta: { cwd: cwdPath, ...(presetId === undefined ? {} : { agentPreset: presetId }) },
-        agentOptions: { provider: selection.provider, model: selection.model },
+        agentOptions: {
+          provider: selection.provider,
+          model: selection.model,
+          // Applied before step preparation. Re-proposing effort later on
+          // agent/request is rejected by DSH >= 0.2.2, so this is the only
+          // point where a worker's effort can be fixed.
+          ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
+        },
         setup: async (agentCtx) => {
           installModelSelection(agentCtx, { current: selection, assembled: undefined });
           if (presets !== undefined) await presets.mount(agentCtx, presetId);
