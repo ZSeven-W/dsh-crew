@@ -190,7 +190,11 @@ export class WorkerRegistry {
       const handle = await this.ctx.agents.create({
         sessionId,
         meta: { cwd: cwdPath, ...(presetId === undefined ? {} : { agentPreset: presetId }) },
-        agentOptions: { provider: selection.provider, model: selection.model },
+        agentOptions: {
+          provider: selection.provider,
+          model: selection.model,
+          ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
+        },
         setup: async (agentCtx) => {
           installModelSelection(agentCtx, { current: selection, assembled: undefined });
           if (presets !== undefined) await presets.mount(agentCtx, presetId);
