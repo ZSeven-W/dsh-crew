@@ -25,6 +25,7 @@ const allowConcurrentCwdSchema = z.boolean().optional().describe('Allow this dis
 // edited on the DSH settings page); dsh_worker_config overrides per session.
 import { readGlobalConfig } from './install/install.mjs';
 import { describeBindings, resolveTierBinding } from './tier-binding.mjs';
+import { configDrift } from './config-drift.mjs';
 const globalDefaults = readGlobalConfig();
 const sessionConfig = {
   enabled: true,
@@ -248,7 +249,7 @@ server.registerTool('dsh_worker_probe', {
 
 server.registerTool('dsh_worker_config', {
   title: 'Session worker configuration',
-  description: 'Read or update session-level worker settings: enable/disable dispatch, default tier/effort/timeout, execution mode (auto = prefer hub, hub = require the DSH hub, standalone = never use it), tier policy, failure escalation, and which LLM route each tier dispatches to. Call with no arguments to read. To run workers on a local model (Ollama and the like), configure that provider ONCE in DSH and then name it here with flash_provider/flash_model or pro_provider/pro_model — this plugin never defines providers of its own. available_providers lists what the host has configured (hub mode only); bindings shows what each tier currently resolves to. The output includes worker_profiles — the external-CLI backends (agy, grok) usable via the worker= parameter of dsh_run_worker / dsh_spawn_worker — and origin, the inherited worker→worker dispatch chain with its depth limit. Session-only.',
+  description: 'Read or update session-level worker settings: enable/disable dispatch, default tier/effort/timeout, execution mode (auto = prefer hub, hub = require the DSH hub, standalone = never use it), tier policy, failure escalation, and which LLM route each tier dispatches to. Call with no arguments to read. To run workers on a local model (Ollama and the like), configure that provider ONCE in DSH and then name it here with flash_provider/flash_model or pro_provider/pro_model — this plugin never defines providers of its own. available_providers lists what the host has configured (hub mode only); bindings shows what each tier currently resolves to. The output includes worker_profiles — the external-CLI backends (agy, grok) usable via the worker= parameter of dsh_run_worker / dsh_spawn_worker — and origin, the inherited worker→worker dispatch chain with its depth limit. Values saved to ~/.config/dsh-crew/config.json (by hand or from the settings page) seed NEW sessions; a running session keeps its startup values unless changed here, and config_changed_since_start lists values that changed in the saved file since this session started and that this session is not using. Session-only.',
   inputSchema: {
     enabled: z.boolean().optional().describe('false = refuse all worker dispatch this session'),
     default_tier: z.enum(['flash', 'pro']).optional(),
@@ -278,6 +279,10 @@ server.registerTool('dsh_worker_config', {
   // empty — "we cannot see them" is not "there are none".
   const available = reachable ? (await hub.providers()).providers : null;
   const bindings = describeBindings(sessionConfig);
+  // Session scope is intentional (see the sessionConfig comment above); this
+  // only tells the caller when the saved config no longer matches it. #23
+  const drift = configDrift({ atStart: globalDefaults, session: sessionConfig, now: readGlobalConfig() });
+  const drifted = Object.keys(drift);
   const custom = Object.entries(bindings).filter(([, b]) => b.custom).map(([tier]) => tier);
   const unknown = available === null
     ? []
@@ -292,6 +297,12 @@ server.registerTool('dsh_worker_config', {
       : {}),
     ...(unknown.length > 0
       ? { providers_warning: `DSH has no provider route named ${unknown.map((t) => JSON.stringify(bindings[t].provider)).join(', ')} (bound to: ${unknown.join(', ')}). Configure it in DSH first, or these dispatches will fail.` }
+      : {}),
+    ...(drifted.length > 0
+      ? {
+          config_changed_since_start: drift,
+          config_note: `config.json now sets ${drifted.join(', ')} differently from when this session started. Saved settings seed NEW sessions only; this session keeps the values shown above (bindings is what each tier dispatches to now). To use the saved values in this session, pass them to dsh_worker_config; otherwise start a new session.`,
+        }
       : {}),
     ...(custom.length > 0
       ? { route_caveat: 'Appearing in available_providers only means an adapter is registered, NOT that it can run a worker. Measured: a route registered purely to re-route another provider fails a dispatch with "registration.adapter.prepareCall is not a function". Nor does DSH report tool-calling support anywhere, and a worker that cannot call tools returns prose and touches no files. A tier bound to a custom route is therefore UNVERIFIED until you call dsh_worker_probe for the configured route; the probe observes one request and is not a permanent capability guarantee.' }

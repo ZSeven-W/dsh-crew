@@ -327,9 +327,31 @@ Uninstall: `node src/install/cli.mjs uninstall-grok`
 | `dsh_worker_status` | Real-time progress of all jobs (turn/step/current tool/token) + cwd advisory locks |
 | `dsh_worker_result` | Fetch result, can specify `wait_seconds` to wait |
 | `dsh_worker_cancel` | Cancel specified job, terminate its runtime process |
-| `dsh_worker_config` | Read/set session defaults (tier, effort, mode, timeout, policy, escalation) and list `worker_profiles` |
+| `dsh_worker_config` | Read/set session defaults (tier, effort, mode, timeout, policy, escalation, tier → model routes) and list `worker_profiles`; flags saved config changed since start that this session is not using |
 
 Progress is simultaneously mirrored to `~/.config/dsh-crew/status.d/` (one shard file per writer, can be read by statusline / external monitoring).
+## Worker routes and session defaults
+
+Each tier dispatches to a `{provider, model}` route. By default flash uses `deepseek-official` / `deepseek-v4-flash` and pro uses `deepseek-official` / `deepseek-v4-pro`. To send workers somewhere else, such as a local Ollama model or an OpenAI-compatible gateway, configure that provider once in DSH and then name it in `~/.config/dsh-crew/config.json`:
+
+```json
+{
+  "flash_provider": "ollama",
+  "flash_model": "qwen3:8b",
+  "pro_provider": "",
+  "pro_model": ""
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `flash_provider` / `pro_provider` | A provider id DSH already has configured (`dsh_worker_config` lists them as `available_providers` in hub mode). Blank = `deepseek-official`. |
+| `flash_model` / `pro_model` | The model id as that provider names it. Blank = the tier's built-in DeepSeek model. |
+
+Provider and model resolve independently, so setting only a model keeps the default provider. Being listed in `available_providers` does not prove a route can run a worker; check a new route once with `dsh_worker_probe`.
+
+**`config.json` seeds new sessions.** The MCP server reads the file once, when your Claude Code / Codex session starts, and keeps those values as that session's defaults. This applies to every session default: tier, effort, mode, timeout, tier policy, escalation, presets and the routes above. After editing the file (by hand or from the settings page), either start a new session or apply the change to the running one with `dsh_worker_config` (for example `flash_model: "qwen3:8b"`). While the file has changed since the session started and sets something the running session is not using, `dsh_worker_config` reports it under `config_changed_since_start`; its `bindings` field always shows the route each tier dispatches to right now.
+
 
 ## Dispatch guardrails
 
