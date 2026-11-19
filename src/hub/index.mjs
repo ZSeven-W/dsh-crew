@@ -150,7 +150,6 @@ export class WorkerRegistry {
     };
     this.jobs.set(id, job);
 
-    const selection = { provider: resolvedProvider, model: resolvedModel, reasoningEffort: effort };
     const presets = this.ctx.get('agentPresets');
     const cfg = this.getConfig?.() ?? {};
     const wanted = preset ?? (tier === 'flash' ? cfg.preset_flash : cfg.preset_pro);
@@ -187,6 +186,15 @@ export class WorkerRegistry {
     };
 
     const run = async () => {
+      const llm = this.ctx.llm;
+      const modelInfo = typeof llm?.resolveModelInfo === 'function'
+        ? await llm.resolveModelInfo(resolvedProvider, resolvedModel)
+        : undefined;
+      const acceptsEffort = modelInfo === undefined || modelInfo.reasoning?.efforts.some(level => level.id === effort);
+      const selection = {
+        provider: resolvedProvider, model: resolvedModel,
+        ...(acceptsEffort ? { reasoningEffort: effort } : {}),
+      };
       const handle = await this.ctx.agents.create({
         sessionId,
         meta: { cwd: cwdPath, ...(presetId === undefined ? {} : { agentPreset: presetId }) },
@@ -535,10 +543,12 @@ export async function apply(ctx) {
         try {
           const { readGlobalConfig } = await import('../install/install.mjs');
           const providers = ctx.llm.listProviders().map((p) => ({ id: p.id, name: p.name ?? p.id }));
+          const selection = ctx.agentDefaultModel.currentSelection?.();
           return sendJson(res, 200, {
             ok: true,
             providers,
             bindings: describeBindings(readGlobalConfig()),
+            defaultRoute: selection ? { provider: selection.provider, model: selection.model } : null,
           });
         } catch (err) {
           return sendJson(res, 500, { ok: false, error: err?.message ?? String(err) });

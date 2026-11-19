@@ -38,7 +38,8 @@ test('the hub no longer keeps its own tier -> model table', () => {
 });
 
 test('the hub hands the resolved route to the model selection and to agents.create', () => {
-  assert.ok(hub.includes('provider: resolvedProvider, model: resolvedModel, reasoningEffort: effort'));
+  assert.ok(hub.includes('provider: resolvedProvider, model: resolvedModel,'));
+  assert.ok(hub.includes('acceptsEffort ? { reasoningEffort: effort }'));
   assert.ok(hub.includes('provider: selection.provider,'));
   assert.ok(hub.includes('model: selection.model,'));
   assert.ok(hub.includes('reasoningEffort: selection.reasoningEffort'));

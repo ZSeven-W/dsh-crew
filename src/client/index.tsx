@@ -5,6 +5,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { WorkerGatewayEditor } from './WorkerGatewayEditor';
+import type { GatewayRemote, WorkerRoute } from './worker-gateway';
 
 import { reconcileGhosts, displayJobs, groupJobs, workspaceKey, basenameOf, abbrevPath, workspaceLocks, lockBadgeOf, statusInfoOf, ghostPidOf, procBadgeOf, dueProcProbes } from './jobs-view';
 
@@ -102,6 +104,8 @@ const COPY = {
     presetFlash: 'flash 模式', presetPro: 'pro 模式',
     bindingFlash: 'flash 模型路由', bindingPro: 'pro 模型路由',
     bindingProvider: 'Provider ID', bindingModel: '模型 ID', bindingSave: '保存路由',
+    bindingDshDefault: '填入 DSH 当前默认路由', bindingLoadingDefault: '正在读取默认路由…',
+    bindingDefaultError: '读不到 DSH 当前默认路由。',
     bindingHint: 'Hub worker 使用 DSH 中配置的 provider。留空的字段使用该档位的内置值。',
     bindingSaveError: '无法保存模型路由，请重试。',
     builtInPresetNames: { standard: '标准模式', ptc: 'PTC 模式', minimal: '极简模式', cordis: '创造模式' } as Record<string, string>,
@@ -198,6 +202,8 @@ const COPY = {
     presetFlash: 'flash preset', presetPro: 'pro preset',
     bindingFlash: 'flash model route', bindingPro: 'pro model route',
     bindingProvider: 'Provider ID', bindingModel: 'Model ID', bindingSave: 'Save route',
+    bindingDshDefault: 'Use current DSH default', bindingLoadingDefault: 'Reading the default route…',
+    bindingDefaultError: 'Could not read the current DSH default route.',
     bindingHint: 'Hub workers use providers configured in DSH. Blank fields use the built-in values for the tier.',
     bindingSaveError: 'Could not save the model route. Try again.',
     builtInPresetNames: { standard: 'Standard mode', ptc: 'PTC mode', minimal: 'Minimal mode', cordis: 'Creator mode' } as Record<string, string>,
@@ -368,20 +374,38 @@ function CustomSelect({ value, options, onChange, minWidth }: {
 type TierBindingCopy = (typeof COPY)[keyof typeof COPY];
 type WorkerProvider = { id: string; name?: string };
 
-function TierBindingEditor({ label, copy, provider, model, saving, save }: {
+function TierBindingEditor({ label, copy, provider, model, saving, save, readDefault }: {
   label: string;
   copy: TierBindingCopy;
   provider: string;
   model: string;
   saving: boolean;
   save: (provider: string, model: string) => void;
+  readDefault?: () => Promise<WorkerRoute | null>;
 }) {
+  const [draft, setDraft] = useState({ provider, model });
+  const [readingDefault, setReadingDefault] = useState(false);
+  const [defaultFailed, setDefaultFailed] = useState(false);
+  const locked = saving || readingDefault;
+  const fillDefault = async () => {
+    if (!readDefault) return;
+    setReadingDefault(true);
+    setDefaultFailed(false);
+    try {
+      const route = await readDefault();
+      if (route) setDraft(route);
+      else setDefaultFailed(true);
+    } catch {
+      setDefaultFailed(true);
+    } finally {
+      setReadingDefault(false);
+    }
+  };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const values = new FormData(event.currentTarget);
-    const nextProvider = String(values.get('provider') ?? '').trim();
-    const nextModel = String(values.get('model') ?? '').trim();
-    if (!saving && (nextProvider !== provider || nextModel !== model)) save(nextProvider, nextModel);
+    const nextProvider = draft.provider.trim();
+    const nextModel = draft.model.trim();
+    if (!locked && (nextProvider !== provider || nextModel !== model)) save(nextProvider, nextModel);
   };
   const inputStyle = { ...S.input, ...S.mono, width: '100%', boxSizing: 'border-box' as const };
   return (
@@ -389,13 +413,19 @@ function TierBindingEditor({ label, copy, provider, model, saving, save }: {
       style={{ gridColumn: '1 / -1', ...S.blockGrid, alignItems: 'end' }}>
       <div style={{ gridColumn: '1 / -1', fontSize: 12.5, fontWeight: 600 }}>{label}</div>
       <label style={S.field}><span style={S.fieldLabel}>{copy.bindingProvider}</span>
-        <input name="provider" list="dsh-crew-worker-providers" defaultValue={provider} disabled={saving}
+        <input name="provider" list="dsh-crew-worker-providers" value={draft.provider} disabled={locked}
+          onChange={(e) => setDraft({ ...draft, provider: e.target.value })}
           autoComplete="off" spellCheck={false} style={inputStyle} /></label>
       <label style={S.field}><span style={S.fieldLabel}>{copy.bindingModel}</span>
-        <input name="model" defaultValue={model} disabled={saving} autoComplete="off" spellCheck={false}
+        <input name="model" value={draft.model} disabled={locked} autoComplete="off" spellCheck={false}
+          onChange={(e) => setDraft({ ...draft, model: e.target.value })}
           style={inputStyle} /></label>
-      <div style={{ gridColumn: '1 / -1', justifySelf: 'end' }}>
-        <button type="submit" style={S.btn} disabled={saving}>{copy.bindingSave}</button>
+      <div style={{ gridColumn: '1 / -1', justifySelf: 'end', display: 'flex', gap: 8, alignItems: 'center' }}>
+        {defaultFailed && <span role="status" style={{ fontSize: 11.5 }}>{copy.bindingDefaultError}</span>}
+        {readDefault && <button type="button" style={S.btn} disabled={locked} onClick={() => void fillDefault()}>
+          {readingDefault ? copy.bindingLoadingDefault : copy.bindingDshDefault}
+        </button>}
+        <button type="submit" style={S.btn} disabled={locked}>{copy.bindingSave}</button>
       </div>
     </form>
   );
@@ -437,6 +467,17 @@ function WorkersPanel({ ctx }: { ctx: any }) {
   const [status, setStatus] = useState<any>(null);
   const [config, setConfig] = useState<any>(null);
   const [workerProviders, setWorkerProviders] = useState<WorkerProvider[]>([]);
+  const [hasHostDefault, setHasHostDefault] = useState(false);
+  const [gatewayRemote, setGatewayRemote] = useState<GatewayRemote | null>(null);
+  useEffect(() => {
+    if (typeof ctx.inject !== 'function') return;
+    let mounted = true;
+    const scope = ctx.inject(['remote', 'remote.settings', 'remote.credentials', 'remote.llm'], (inner: { remote: GatewayRemote }) => {
+      if (mounted) setGatewayRemote(() => inner.remote);
+      return () => { if (mounted) setGatewayRemote(null); };
+    });
+    return () => { mounted = false; void scope.dispose(); };
+  }, [ctx]);
   const [bindingSaving, setBindingSaving] = useState(false);
   const [dynModels, setDynModels] = useState<Record<string, Array<{ value: string; label?: string }>>>({});
   const [presetRoster, setPresetRoster] = useState<{ defaultId?: string; presets: Array<{ id: string; name?: string; trust?: string }> }>({ presets: [] });
@@ -566,14 +607,24 @@ function WorkersPanel({ ctx }: { ctx: any }) {
     } catch { /* instance restarting */ }
   }, [get, mergeJobs]);
 
+  const refreshWorkerProviders = useCallback(() => {
+    void get('/providers').then((r) => {
+      if (r.ok) {
+        setWorkerProviders(r.providers);
+        setHasHostDefault(Boolean(r.defaultRoute?.provider && r.defaultRoute?.model));
+      }
+    }).catch(() => {});
+  }, [get]);
+  const readDefaultRoute = useCallback(async (): Promise<WorkerRoute | null> => {
+    const result = await get('/providers');
+    return result.ok && result.defaultRoute?.provider && result.defaultRoute?.model ? result.defaultRoute : null;
+  }, [get]);
   useEffect(() => {
     void refreshAll();
-    void get('/providers').then((r) => {
-      if (r.ok) setWorkerProviders(r.providers);
-    }).catch(() => {});
+    refreshWorkerProviders();
     const timer = setInterval(() => { void get('/jobs').then((j) => { if (j.ok) mergeJobs(j.jobs ?? []); }).catch(() => {}); }, 3000);
     return () => clearInterval(timer);
-  }, [refreshAll, get, mergeJobs]);
+  }, [refreshAll, refreshWorkerProviders, get, mergeJobs]);
 
   const act = useCallback(async (target: string, confirmName?: string) => {
     if (confirmName && !window.confirm(copy.confirmRestore(confirmName))) return;
@@ -872,6 +923,7 @@ function WorkersPanel({ ctx }: { ctx: any }) {
           <label style={S.field}><span style={S.fieldLabel}>{copy.presetPro}</span>
             <CustomSelect value={config.preset_pro ?? 'default'} onChange={(v) => field('preset_pro', v)} options={presetOptions} /></label>
           <div style={{ gridColumn: '1 / -1', fontSize: 11.5, opacity: 0.65 }}>{copy.bindingHint}</div>
+          <WorkerGatewayEditor locale={locale} remote={gatewayRemote} styles={S} onSaved={refreshWorkerProviders} />
           <datalist id="dsh-crew-worker-providers">
             {workerProviders.map(({ id, name }) => <option key={id} value={id} label={name} />)}
           </datalist>
@@ -881,6 +933,7 @@ function WorkersPanel({ ctx }: { ctx: any }) {
             return <TierBindingEditor key={JSON.stringify([tier, provider, model])}
               label={tier === 'flash' ? copy.bindingFlash : copy.bindingPro} copy={copy}
               provider={provider} model={model} saving={bindingSaving}
+              readDefault={hasHostDefault ? readDefaultRoute : undefined}
               save={(nextProvider, nextModel) => void saveTierBinding(tier, nextProvider, nextModel)} />;
           })}
         </>))}
