@@ -391,9 +391,14 @@ type TierBindingCopy = (typeof COPY)[keyof typeof COPY];
 type WorkerProvider = { id: string; name?: string };
 type RouteTier = 'flash' | 'pro';
 const ROUTE_TIERS: RouteTier[] = ['flash', 'pro'];
-type RouteDraft = WorkerRoute;
-type RouteRow = { draft: RouteDraft; base: RouteDraft };
 type RouteNotice = { kind: 'saved' | 'error'; text: string } | null;
+type RouteListEntry = { provider: string; state: ModelListState };
+type RouteRow = {
+  draft: WorkerRoute;
+  base: WorkerRoute;
+  notice: RouteNotice;
+  list?: RouteListEntry;
+};
 
 const ROUTING_LAYOUT = `
 .dsh-crew-routing { container: crew-routing / inline-size; }
@@ -423,7 +428,7 @@ const ROUTING_LAYOUT = `
 }
 `;
 
-function readRoute(config: any, tier: RouteTier): RouteDraft {
+function readRoute(config: any, tier: RouteTier): WorkerRoute {
   return {
     provider: String(config?.[`${tier}_provider`] ?? ''),
     model: String(config?.[`${tier}_model`] ?? ''),
@@ -465,7 +470,7 @@ function ModelRouting({ config, copy, locale, get, post, readDefaultRoute, hasHo
   const [rows, setRows] = useState<Record<RouteTier, RouteRow>>(() => {
     const flash = readRoute(config, 'flash');
     const pro = readRoute(config, 'pro');
-    return { flash: { draft: flash, base: flash }, pro: { draft: pro, base: pro } };
+    return { flash: { draft: flash, base: flash, notice: null }, pro: { draft: pro, base: pro, notice: null } };
   });
   useEffect(() => {
     setRows((current) => {
@@ -476,15 +481,12 @@ function ModelRouting({ config, copy, locale, get, post, readDefaultRoute, hasHo
         const row = current[tier];
         if (row.base.provider === stored.provider && row.base.model === stored.model) continue;
         changed = true;
-        next[tier] = routeDirty(row) ? { ...row, base: stored } : { draft: stored, base: stored };
+        next[tier] = { ...row, base: stored, draft: routeDirty(row) ? row.draft : stored };
       }
       return changed ? next : current;
     });
   }, [config?.flash_provider, config?.flash_model, config?.pro_provider, config?.pro_model]);
 
-  const [notices, setNotices] = useState<Record<RouteTier, RouteNotice>>({ flash: null, pro: null });
-  const [modelLists, setModelLists] = useState<Partial<Record<RouteTier, { provider: string; state: ModelListState }>>>({});
-  const fetchTokens = useRef<Record<RouteTier, number>>({ flash: 0, pro: 0 });
   const savingRef = useRef<RouteTier | null>(null);
   const [saving, setSaving] = useState<RouteTier | null>(null);
   const defaultingRef = useRef(false);
@@ -494,43 +496,41 @@ function ModelRouting({ config, copy, locale, get, post, readDefaultRoute, hasHo
   const endpointsId = useId();
   const providerListId = useId();
 
-  const notify = (tier: RouteTier, notice: RouteNotice) => {
-    setNotices((current) => ({ ...current, [tier]: notice }));
+  const updateRow = (tier: RouteTier, update: (row: RouteRow) => RouteRow) => {
+    setRows((current) => {
+      const row = update(current[tier]);
+      return row === current[tier] ? current : { ...current, [tier]: row };
+    });
   };
+  const notify = (tier: RouteTier, notice: RouteNotice) => updateRow(tier, (row) => ({ ...row, notice }));
 
-  const editRow = (tier: RouteTier, patch: Partial<RouteDraft>) => {
-    setRows((current) => ({ ...current, [tier]: { ...current[tier], draft: { ...current[tier].draft, ...patch } } }));
-    setNotices((current) => (current[tier] === null ? current : { ...current, [tier]: null }));
-    if (patch.provider !== undefined) {
-      fetchTokens.current[tier] += 1;
-      setModelLists((current) => {
-        if (current[tier] === undefined) return current;
-        const next = { ...current };
-        delete next[tier];
-        return next;
-      });
-    }
+  const editRow = (tier: RouteTier, patch: Partial<WorkerRoute>) => {
+    updateRow(tier, (row) => ({
+      ...row,
+      draft: { ...row.draft, ...patch },
+      notice: null,
+      list: patch.provider !== undefined ? undefined : row.list,
+    }));
   };
 
   const selectedProvider = (tier: RouteTier): string =>
     rows[tier].draft.provider.trim() || DEFAULT_TIER_BINDING[tier].provider;
 
   const listFor = (tier: RouteTier): ModelListState => {
-    const entry = modelLists[tier];
+    const entry = rows[tier].list;
     return entry?.provider === selectedProvider(tier) ? entry.state : { kind: 'idle' };
   };
 
   const loadModels = (tier: RouteTier) => {
     const provider = selectedProvider(tier);
-    const token = ++fetchTokens.current[tier];
-    setModelLists((current) => ({ ...current, [tier]: { provider, state: { kind: 'loading' } } }));
-    void get(`/providers?provider=${encodeURIComponent(provider)}`).then((result) => {
-      if (fetchTokens.current[tier] !== token) return;
-      setModelLists((current) => ({ ...current, [tier]: { provider, state: readModelList(result) } }));
-    }).catch(() => {
-      if (fetchTokens.current[tier] !== token) return;
-      setModelLists((current) => ({ ...current, [tier]: { provider, state: { kind: 'failed' } } }));
-    });
+    const pending: RouteListEntry = { provider, state: { kind: 'loading' } };
+    updateRow(tier, (row) => ({ ...row, list: pending }));
+    void get(`/providers?provider=${encodeURIComponent(provider)}`)
+      .then(readModelList)
+      .catch((): ModelListState => ({ kind: 'failed' }))
+      .then((state) => {
+        updateRow(tier, (row) => (row.list === pending ? { ...row, list: { provider, state } } : row));
+      });
   };
 
   const save = async (tier: RouteTier) => {
@@ -547,12 +547,10 @@ function ModelRouting({ config, copy, locale, get, post, readDefaultRoute, hasHo
       if (!result?.ok) throw new Error('save failed');
       const stored = readRoute(result.config, tier);
       onConfig(tier, stored);
-      setRows((current) => {
-        const value = current[tier];
-        const keepDraft = value.draft.provider.trim() !== provider || value.draft.model.trim() !== model;
-        return { ...current, [tier]: { draft: keepDraft ? value.draft : stored, base: stored } };
+      updateRow(tier, (row) => {
+        const keepDraft = row.draft.provider.trim() !== provider || row.draft.model.trim() !== model;
+        return { ...row, draft: keepDraft ? row.draft : stored, base: stored, notice: { kind: 'saved', text: copy.saved } };
       });
-      notify(tier, { kind: 'saved', text: copy.saved });
     } catch {
       notify(tier, { kind: 'error', text: copy.bindingSaveError });
     } finally {
@@ -579,9 +577,10 @@ function ModelRouting({ config, copy, locale, get, post, readDefaultRoute, hasHo
   };
 
   const endpointsSaved = () => {
-    fetchTokens.current.flash += 1;
-    fetchTokens.current.pro += 1;
-    setModelLists({});
+    setRows((current) => ({
+      flash: { ...current.flash, list: undefined },
+      pro: { ...current.pro, list: undefined },
+    }));
     onEndpointsSaved();
   };
 
@@ -589,7 +588,7 @@ function ModelRouting({ config, copy, locale, get, post, readDefaultRoute, hasHo
   const renderRow = (tier: RouteTier) => {
     const row = rows[tier];
     const dirty = routeDirty(row);
-    const notice = notices[tier];
+    const notice = row.notice;
     const busy = saving === tier;
     const locking = busy || readingDefault === tier;
     const fallback = DEFAULT_TIER_BINDING[tier];
