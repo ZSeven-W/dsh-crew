@@ -3,6 +3,7 @@
 // Talks only to the plugin's own loopback routes.
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 
 import { reconcileGhosts, displayJobs, groupJobs, workspaceKey, basenameOf, abbrevPath, workspaceLocks, lockBadgeOf, statusInfoOf, ghostPidOf, procBadgeOf, dueProcProbes } from './jobs-view';
@@ -93,12 +94,16 @@ const COPY = {
     install: '安装', update: '更新', restore: '还原',
     confirmRestore: (name: string) => `确定从 ${name} 移除 dsh-crew 集成？（settings 会先备份）`,
     globalConfig: '全局配置',
-    globalHint: '修改即时保存到 ~/.config/dsh-crew/config.json；CC / Codex 的新会话自动读取为默认值（会话内可用 /dsh-crew:config 临时覆盖）。',
+    globalHint: '设置保存在 ~/.config/dsh-crew/config.json；CC / Codex 的新会话自动读取为默认值（会话内可用 /dsh-crew:config 临时覆盖）。',
     tier: '默认档位', effort: '默认推理', mode: '执行模式', timeout: '默认超时(秒)', hubUrl: 'Hub 地址',
     tierPolicy: '档位策略', escalate: '失败升档',
     tierPolicyDesc: { auto: 'auto · orchestrator 自选', 'flash-only': '只用 flash', 'pro-only': '只用 pro' },
     escalateHint: 'flash 失败自动用 pro 重试一次',
     presetFlash: 'flash 模式', presetPro: 'pro 模式',
+    bindingFlash: 'flash 模型路由', bindingPro: 'pro 模型路由',
+    bindingProvider: 'Provider ID', bindingModel: '模型 ID', bindingSave: '保存路由',
+    bindingHint: 'Hub worker 使用 DSH 中配置的 provider。留空的字段使用该档位的内置值。',
+    bindingSaveError: '无法保存模型路由，请重试。',
     builtInPresetNames: { standard: '标准模式', ptc: 'PTC 模式', minimal: '极简模式', cordis: '创造模式' } as Record<string, string>,
     multimodal: '多模态',
     visionProvider: '视觉 provider', visionModel: '视觉模型', imagegenProvider: '生图 provider',
@@ -185,12 +190,16 @@ const COPY = {
     install: 'Install', update: 'Update', restore: 'Restore',
     confirmRestore: (name: string) => `Remove the dsh-crew integration from ${name}? (settings are backed up first)`,
     globalConfig: 'Global configuration',
-    globalHint: 'Changes save instantly to ~/.config/dsh-crew/config.json; new CC / Codex sessions pick them up as defaults (override per session with /dsh-crew:config).',
+    globalHint: 'Settings are saved to ~/.config/dsh-crew/config.json; new CC / Codex sessions pick them up as defaults (override per session with /dsh-crew:config).',
     tier: 'Default tier', effort: 'Default effort', mode: 'Mode', timeout: 'Timeout (s)', hubUrl: 'Hub URL',
     tierPolicy: 'Tier policy', escalate: 'Escalate on failure',
     tierPolicyDesc: { auto: 'auto · orchestrator picks', 'flash-only': 'flash only', 'pro-only': 'pro only' },
     escalateHint: 'retry a failed flash run once on pro',
     presetFlash: 'flash preset', presetPro: 'pro preset',
+    bindingFlash: 'flash model route', bindingPro: 'pro model route',
+    bindingProvider: 'Provider ID', bindingModel: 'Model ID', bindingSave: 'Save route',
+    bindingHint: 'Hub workers use providers configured in DSH. Blank fields use the built-in values for the tier.',
+    bindingSaveError: 'Could not save the model route. Try again.',
     builtInPresetNames: { standard: 'Standard mode', ptc: 'PTC mode', minimal: 'Minimal mode', cordis: 'Creator mode' } as Record<string, string>,
     multimodal: 'Multimodal',
     visionProvider: 'Vision provider', visionModel: 'Vision model', imagegenProvider: 'Image-gen provider',
@@ -356,6 +365,42 @@ function CustomSelect({ value, options, onChange, minWidth }: {
   </>);
 }
 
+type TierBindingCopy = (typeof COPY)[keyof typeof COPY];
+type WorkerProvider = { id: string; name?: string };
+
+function TierBindingEditor({ label, copy, provider, model, saving, save }: {
+  label: string;
+  copy: TierBindingCopy;
+  provider: string;
+  model: string;
+  saving: boolean;
+  save: (provider: string, model: string) => void;
+}) {
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget);
+    const nextProvider = String(values.get('provider') ?? '').trim();
+    const nextModel = String(values.get('model') ?? '').trim();
+    if (!saving && (nextProvider !== provider || nextModel !== model)) save(nextProvider, nextModel);
+  };
+  const inputStyle = { ...S.input, ...S.mono, width: '100%', boxSizing: 'border-box' as const };
+  return (
+    <form aria-label={label} onSubmit={submit}
+      style={{ gridColumn: '1 / -1', ...S.blockGrid, alignItems: 'end' }}>
+      <div style={{ gridColumn: '1 / -1', fontSize: 12.5, fontWeight: 600 }}>{label}</div>
+      <label style={S.field}><span style={S.fieldLabel}>{copy.bindingProvider}</span>
+        <input name="provider" list="dsh-crew-worker-providers" defaultValue={provider} disabled={saving}
+          autoComplete="off" spellCheck={false} style={inputStyle} /></label>
+      <label style={S.field}><span style={S.fieldLabel}>{copy.bindingModel}</span>
+        <input name="model" defaultValue={model} disabled={saving} autoComplete="off" spellCheck={false}
+          style={inputStyle} /></label>
+      <div style={{ gridColumn: '1 / -1', justifySelf: 'end' }}>
+        <button type="submit" style={S.btn} disabled={saving}>{copy.bindingSave}</button>
+      </div>
+    </form>
+  );
+}
+
 function sourceLabel(source?: string) {
   if (source === 'claude-code') return 'CC';
   if (source === 'codex') return 'Codex';
@@ -391,6 +436,8 @@ function WorkersPanel({ ctx }: { ctx: any }) {
   const [hoverTask, setHoverTask] = useState<{ id: string; text: string; right: number; top: number; bottom: number; flip: boolean } | null>(null);
   const [status, setStatus] = useState<any>(null);
   const [config, setConfig] = useState<any>(null);
+  const [workerProviders, setWorkerProviders] = useState<WorkerProvider[]>([]);
+  const [bindingSaving, setBindingSaving] = useState(false);
   const [dynModels, setDynModels] = useState<Record<string, Array<{ value: string; label?: string }>>>({});
   const [presetRoster, setPresetRoster] = useState<{ defaultId?: string; presets: Array<{ id: string; name?: string; trust?: string }> }>({ presets: [] });
   // Labels are built at render, not at fetch, so they follow a locale switch.
@@ -521,6 +568,9 @@ function WorkersPanel({ ctx }: { ctx: any }) {
 
   useEffect(() => {
     void refreshAll();
+    void get('/providers').then((r) => {
+      if (r.ok) setWorkerProviders(r.providers);
+    }).catch(() => {});
     const timer = setInterval(() => { void get('/jobs').then((j) => { if (j.ok) mergeJobs(j.jobs ?? []); }).catch(() => {}); }, 3000);
     return () => clearInterval(timer);
   }, [refreshAll, get, mergeJobs]);
@@ -548,6 +598,21 @@ function WorkersPanel({ ctx }: { ctx: any }) {
   };
   /** Text/number inputs: track locally, apply on blur. */
   const fieldLocal = (key: string, value: any) => setConfig((c: any) => ({ ...c, [key]: value }));
+
+  const saveTierBinding = async (tier: 'flash' | 'pro', provider: string, model: string) => {
+    setBindingSaving(true);
+    try {
+      const result = await post('/config', { [`${tier}_provider`]: provider, [`${tier}_model`]: model });
+      if (!result.ok) throw new Error(result.error);
+      setConfig(result.config);
+      setNotice(copy.saved);
+      setTimeout(() => setNotice(''), 1500);
+    } catch {
+      setNotice(copy.bindingSaveError);
+    } finally {
+      setBindingSaving(false);
+    }
+  };
 
   // --- custom providers & user-added models -------------------------------
   const customProviders: any[] = config?.custom_providers ?? [];
@@ -806,6 +871,18 @@ function WorkersPanel({ ctx }: { ctx: any }) {
             <CustomSelect value={config.preset_flash ?? 'default'} onChange={(v) => field('preset_flash', v)} options={presetOptions} /></label>
           <label style={S.field}><span style={S.fieldLabel}>{copy.presetPro}</span>
             <CustomSelect value={config.preset_pro ?? 'default'} onChange={(v) => field('preset_pro', v)} options={presetOptions} /></label>
+          <div style={{ gridColumn: '1 / -1', fontSize: 11.5, opacity: 0.65 }}>{copy.bindingHint}</div>
+          <datalist id="dsh-crew-worker-providers">
+            {workerProviders.map(({ id, name }) => <option key={id} value={id} label={name} />)}
+          </datalist>
+          {(['flash', 'pro'] as const).map((tier) => {
+            const provider = config[`${tier}_provider`] ?? '';
+            const model = config[`${tier}_model`] ?? '';
+            return <TierBindingEditor key={JSON.stringify([tier, provider, model])}
+              label={tier === 'flash' ? copy.bindingFlash : copy.bindingPro} copy={copy}
+              provider={provider} model={model} saving={bindingSaving}
+              save={(nextProvider, nextModel) => void saveTierBinding(tier, nextProvider, nextModel)} />;
+          })}
         </>))}
 
 
