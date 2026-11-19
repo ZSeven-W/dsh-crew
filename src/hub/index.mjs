@@ -541,6 +541,42 @@ export async function apply(ctx) {
       handler: async (req, res) => {
         if (!isLoopbackRequest(req)) return sendJson(res, 403, { ok: false, error: 'loopback only' });
         try {
+          const query = new URL(req.url, 'http://localhost').searchParams;
+          const requested = query.get('provider');
+          if (requested !== null) {
+            const reply = (state, models = []) => sendJson(res, 200, { ok: true, state, models });
+            try {
+              const registered = ctx.llm.listProviders().some((provider) => provider.id === requested);
+              if (!registered) return reply('missing');
+              const revision = query.get('revision');
+              let resolved;
+              if (revision === null) {
+                if (typeof ctx.llm.listModels !== 'function') return reply('unsupported');
+                resolved = await ctx.llm.listModels(requested);
+              } else {
+                const site = req.headers['sec-fetch-site'];
+                if (site && site !== 'same-origin') return sendJson(res, 403, { ok: false, error: 'same origin only' });
+                if (typeof ctx.llm.discoverModels !== 'function') return reply('unsupported');
+                const ns = ctx.get('settings')?.describe({ redactSecrets: true }).find((entry) => entry.ns === 'llm-pi-ai');
+                const profile = ns?.value?.providers?.[requested];
+                if (String(ns?.revision) !== revision || profile?.api !== 'openai-completions' || !profile.baseURL) return reply('error');
+                // DSH attaches credentials by provider ID. Bind the URL to that profile before it resolves credentials.
+                resolved = await ctx.llm.discoverModels(ns.ns, {
+                  provider: requested, baseURL: profile.baseURL, api: profile.api,
+                }, AbortSignal.timeout(15000));
+              }
+              const models = (Array.isArray(resolved) ? resolved : [])
+                .filter((model) => model && typeof model.id === 'string' && model.id !== '')
+                .map((model) => ({
+                  id: model.id,
+                  name: typeof model.name === 'string' && model.name !== '' ? model.name : model.id,
+                }));
+              return reply(models.length === 0 ? 'empty' : 'models', models);
+            } catch (error) {
+              if (error?.code === 'MISSING_CREDENTIAL' || /\banswered (401|403)\b/.test(error?.message ?? '')) return reply('unauthorized');
+              return reply('error');
+            }
+          }
           const { readGlobalConfig } = await import('../install/install.mjs');
           const providers = ctx.llm.listProviders().map((p) => ({ id: p.id, name: p.name ?? p.id }));
           const selection = ctx.agentDefaultModel.currentSelection?.();

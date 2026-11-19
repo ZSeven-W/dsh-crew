@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  loadWorkerGateways, retryWorkerGatewayCredential, saveWorkerGateway,
+  discoverGatewayModels, gatewayDiscoveryRequest, loadWorkerGateways,
+  retryWorkerGatewayCredential, saveWorkerGateway,
 } from '../src/client/worker-gateway.ts';
 
 const draft = {
@@ -141,4 +142,46 @@ test('hosts without writable provider settings leave the editor unavailable', as
   assert.equal(await loadWorkerGateways(remote), null);
   assert.equal(await loadWorkerGateways(undefined), null);
   assert.deepEqual(calls, []);
+});
+
+test('model discovery borrows a saved credential only for its current endpoint', async () => {
+  const { remote } = host({ providers: {
+    'local-gateway': { api: 'openai-completions', baseURL: 'http://127.0.0.1:9000/v1', apiKeyEnv: 'STORED_KEY' },
+  } });
+  const catalog = await loadWorkerGateways(remote);
+  const saved = { ...draft, editing: true, apiKey: '' };
+  const endpoint = { baseURL: 'http://127.0.0.1:9000/v1', api: 'openai-completions' };
+  assert.deepEqual(gatewayDiscoveryRequest(saved, catalog), { ...endpoint, provider: draft.id });
+  assert.deepEqual(gatewayDiscoveryRequest({ ...saved, editing: false }, catalog), endpoint);
+  assert.deepEqual(gatewayDiscoveryRequest({ ...saved, apiKey: draft.apiKey }, catalog), { ...endpoint, apiKey: 'fixture-key' });
+  assert.deepEqual(gatewayDiscoveryRequest({ ...saved, baseURL: 'https://new.example/v1' }, catalog), {
+    ...endpoint, baseURL: 'https://new.example/v1',
+  });
+  assert.equal(gatewayDiscoveryRequest({ ...saved, baseURL: 'https://key@example.test/v1' }, catalog), null);
+});
+
+test('asking for models offers unique IDs without changing the provider or credentials', async () => {
+  const { remote, calls } = host();
+  const request = gatewayDiscoveryRequest(draft, null);
+  remote.llm.discoverModels = async (namespace, proposed) => {
+    assert.equal(namespace, 'llm-pi-ai');
+    assert.deepEqual(proposed, { baseURL: 'http://127.0.0.1:9000/v1', api: 'openai-completions', apiKey: 'fixture-key' });
+    return { ok: true, value: [{ id: 'team-model', name: 'Team Model' }, { id: 'team-model' }, { id: ' ' }] };
+  };
+  assert.deepEqual(await discoverGatewayModels(remote, request), {
+    kind: 'ready', models: [{ id: 'team-model', name: 'Team Model' }],
+  });
+  assert.deepEqual(calls, []);
+});
+
+test('model discovery preserves manual entry for empty, unsupported and failed lookups', async () => {
+  const { remote } = host();
+  const request = gatewayDiscoveryRequest(draft, null);
+  assert.deepEqual(await discoverGatewayModels(remote, request), { kind: 'unsupported' });
+  remote.llm.discoverModels = async () => ({ ok: true, value: [] });
+  assert.deepEqual(await discoverGatewayModels(remote, request), { kind: 'empty' });
+  remote.llm.discoverModels = async () => ({ ok: false, error: { code: 'unavailable', message: 'contains a credential' } });
+  assert.deepEqual(await discoverGatewayModels(remote, request), { kind: 'failed' });
+  remote.llm.discoverModels = async () => ({ ok: false, error: { code: 'llm/model-discovery-rejected', message: 'endpoint answered 401' } });
+  assert.deepEqual(await discoverGatewayModels(remote, request), { kind: 'unauthorized' });
 });

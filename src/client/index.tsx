@@ -2,11 +2,13 @@
 // global worker configuration, and the live jobs table.
 // Talks only to the plugin's own loopback routes.
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { FormEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
+import { ModelField } from './model-field';
+import type { ModelListState } from './model-field';
 import { WorkerGatewayEditor } from './WorkerGatewayEditor';
 import type { GatewayRemote, WorkerRoute } from './worker-gateway';
+import { DEFAULT_TIER_BINDING } from '../tier-binding.mjs';
 
 import { reconcileGhosts, displayJobs, groupJobs, workspaceKey, basenameOf, abbrevPath, workspaceLocks, lockBadgeOf, statusInfoOf, ghostPidOf, procBadgeOf, dueProcProbes } from './jobs-view';
 
@@ -104,10 +106,17 @@ const COPY = {
     presetFlash: 'flash 模式', presetPro: 'pro 模式',
     bindingFlash: 'flash 模型路由', bindingPro: 'pro 模型路由',
     bindingProvider: 'Provider ID', bindingModel: '模型 ID', bindingSave: '保存路由',
+    routingTitle: '模型路由', manageEndpoints: '自定义端点',
+    routeDefault: 'DSH 默认', routeDefaultReading: '读取中…', bindingSaving: '保存中…',
+    fetchModels: '获取模型列表', fetchingModels: '获取中…',
+    modelBlank: '内置默认', modelManual: '手动输入模型 ID', modelPick: '从列表选择模型',
+    modelsEmpty: '该 Provider 未返回模型，可手动填写。', modelsMissing: 'DSH 中没有这个 Provider，可手动填写。',
+    modelsFailed: '无法获取模型列表，可手动填写。', modelsUnsupported: '当前 DSH 不支持模型列表，请手动填写。',
+    modelsUnauthorized: '鉴权失败，请检查 API Key。',
     bindingDshDefault: '填入 DSH 当前默认路由', bindingLoadingDefault: '正在读取默认路由…',
     bindingDefaultError: '读不到 DSH 当前默认路由。',
-    bindingHint: 'Hub worker 使用 DSH 中配置的 provider。留空的字段使用该档位的内置值。',
-    bindingSaveError: '无法保存模型路由，请重试。',
+    bindingHint: 'Hub Worker 使用 DSH 中配置的 Provider。留空时沿用档位内置值。',
+    bindingSaveError: '无法保存模型路由，请检查 Hub 连接后重试。',
     builtInPresetNames: { standard: '标准模式', ptc: 'PTC 模式', minimal: '极简模式', cordis: '创造模式' } as Record<string, string>,
     multimodal: '多模态',
     visionProvider: '视觉 provider', visionModel: '视觉模型', imagegenProvider: '生图 provider',
@@ -202,10 +211,17 @@ const COPY = {
     presetFlash: 'flash preset', presetPro: 'pro preset',
     bindingFlash: 'flash model route', bindingPro: 'pro model route',
     bindingProvider: 'Provider ID', bindingModel: 'Model ID', bindingSave: 'Save route',
+    routingTitle: 'Model routing', manageEndpoints: 'Custom endpoints',
+    routeDefault: 'DSH default', routeDefaultReading: 'Reading…', bindingSaving: 'Saving…',
+    fetchModels: 'Fetch models', fetchingModels: 'Fetching…',
+    modelBlank: 'Built-in default', modelManual: 'Enter a model ID manually', modelPick: 'Pick a model from the list',
+    modelsEmpty: 'This provider returned no models; enter one manually.', modelsMissing: 'This provider is not configured in DSH; enter a model manually.',
+    modelsFailed: 'Could not list models; enter one manually.', modelsUnsupported: 'This DSH build cannot list models; enter one manually.',
     bindingDshDefault: 'Use current DSH default', bindingLoadingDefault: 'Reading the default route…',
+    modelsUnauthorized: 'Authentication failed. Check the API key.',
     bindingDefaultError: 'Could not read the current DSH default route.',
-    bindingHint: 'Hub workers use providers configured in DSH. Blank fields use the built-in values for the tier.',
-    bindingSaveError: 'Could not save the model route. Try again.',
+    bindingHint: 'Hub workers use DSH providers. Blank fields use the tier defaults.',
+    bindingSaveError: 'Could not save the model route. Check the Hub connection and retry.',
     builtInPresetNames: { standard: 'Standard mode', ptc: 'PTC mode', minimal: 'Minimal mode', cordis: 'Creator mode' } as Record<string, string>,
     multimodal: 'Multimodal',
     visionProvider: 'Vision provider', visionModel: 'Vision model', imagegenProvider: 'Image-gen provider',
@@ -373,61 +389,291 @@ function CustomSelect({ value, options, onChange, minWidth }: {
 
 type TierBindingCopy = (typeof COPY)[keyof typeof COPY];
 type WorkerProvider = { id: string; name?: string };
+type RouteTier = 'flash' | 'pro';
+const ROUTE_TIERS: RouteTier[] = ['flash', 'pro'];
+type RouteDraft = WorkerRoute;
+type RouteRow = { draft: RouteDraft; base: RouteDraft };
+type RouteNotice = { kind: 'saved' | 'error'; text: string } | null;
 
-function TierBindingEditor({ label, copy, provider, model, saving, save, readDefault }: {
-  label: string;
+const ROUTING_LAYOUT = `
+.dsh-crew-routing { container: crew-routing / inline-size; }
+.dsh-crew-routing button:disabled { opacity: .45; cursor: default !important; }
+.dsh-crew-routing :is(input, select, button) { font-family: inherit; min-height: 26px; }
+.dsh-crew-routing .dsh-crew-select { position: relative; display: block; flex: 1; min-width: 0; }
+.dsh-crew-routing .dsh-crew-select select { appearance: none; }
+.dsh-crew-routing .dsh-crew-select::after {
+  content: '▾'; position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+  font-size: 10px; opacity: .5; pointer-events: none;
+}
+.dsh-crew-route-grid { display: grid; gap: 10px; }
+.dsh-crew-route-row { display: grid; align-items: start; gap: 6px; min-width: 0; }
+.dsh-crew-route-head { display: none; }
+.dsh-crew-route-tier { font-size: 12.5px; font-weight: 600; }
+.dsh-crew-route-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.dsh-crew-gateway-fields { display: grid; gap: 8px 12px; min-width: 0; align-items: end; }
+@container crew-routing (min-width: 440px) {
+  .dsh-crew-gateway-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container crew-routing (min-width: 560px) {
+  .dsh-crew-route-grid { grid-template-columns: 40px minmax(0, 3fr) minmax(0, 5fr) auto; gap: 8px; }
+  .dsh-crew-route-head, .dsh-crew-route-row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; column-gap: normal; }
+  .dsh-crew-route-field-label { display: none; }
+  .dsh-crew-route-tier { padding-top: 5px; }
+  .dsh-crew-route-actions { justify-content: end; }
+}
+`;
+
+function readRoute(config: any, tier: RouteTier): RouteDraft {
+  return {
+    provider: String(config?.[`${tier}_provider`] ?? ''),
+    model: String(config?.[`${tier}_model`] ?? ''),
+  };
+}
+
+function routeDirty(row: RouteRow): boolean {
+  return row.draft.provider.trim() !== row.base.provider.trim() || row.draft.model.trim() !== row.base.model.trim();
+}
+
+function readModelList(result: any): ModelListState {
+  if (!result || result.ok !== true) return { kind: 'failed' };
+  if (result.state === 'empty') return { kind: 'empty' };
+  if (result.state === 'missing') return { kind: 'missing' };
+  if (result.state === 'unsupported') return { kind: 'unsupported' };
+  if (result.state === 'unauthorized') return { kind: 'unauthorized' };
+  if (result.state !== 'models' || !Array.isArray(result.models)) return { kind: 'failed' };
+  const models = result.models
+    .filter((entry: any) => entry && typeof entry.id === 'string' && entry.id.trim() !== '')
+    .map((entry: any) => (typeof entry.name === 'string' && entry.name.trim() !== ''
+      ? { id: entry.id, name: entry.name }
+      : { id: entry.id }));
+  return models.length === 0 ? { kind: 'empty' } : { kind: 'ready', models };
+}
+
+function ModelRouting({ config, copy, locale, get, post, readDefaultRoute, hasHostDefault, workerProviders, gatewayRemote, onConfig, onEndpointsSaved }: {
+  config: any;
   copy: TierBindingCopy;
-  provider: string;
-  model: string;
-  saving: boolean;
-  save: (provider: string, model: string) => void;
-  readDefault?: () => Promise<WorkerRoute | null>;
+  locale: string;
+  get: (path: string) => Promise<any>;
+  post: (path: string, body: any) => Promise<any>;
+  readDefaultRoute?: () => Promise<WorkerRoute | null>;
+  hasHostDefault: boolean;
+  workerProviders: WorkerProvider[];
+  gatewayRemote: GatewayRemote | null;
+  onConfig: (tier: RouteTier, route: WorkerRoute) => void;
+  onEndpointsSaved: () => void;
 }) {
-  const [draft, setDraft] = useState({ provider, model });
-  const [readingDefault, setReadingDefault] = useState(false);
-  const [defaultFailed, setDefaultFailed] = useState(false);
-  const locked = saving || readingDefault;
-  const fillDefault = async () => {
-    if (!readDefault) return;
-    setReadingDefault(true);
-    setDefaultFailed(false);
-    try {
-      const route = await readDefault();
-      if (route) setDraft(route);
-      else setDefaultFailed(true);
-    } catch {
-      setDefaultFailed(true);
-    } finally {
-      setReadingDefault(false);
+  const [rows, setRows] = useState<Record<RouteTier, RouteRow>>(() => {
+    const flash = readRoute(config, 'flash');
+    const pro = readRoute(config, 'pro');
+    return { flash: { draft: flash, base: flash }, pro: { draft: pro, base: pro } };
+  });
+  useEffect(() => {
+    setRows((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const tier of ROUTE_TIERS) {
+        const stored = readRoute(config, tier);
+        const row = current[tier];
+        if (row.base.provider === stored.provider && row.base.model === stored.model) continue;
+        changed = true;
+        next[tier] = routeDirty(row) ? { ...row, base: stored } : { draft: stored, base: stored };
+      }
+      return changed ? next : current;
+    });
+  }, [config?.flash_provider, config?.flash_model, config?.pro_provider, config?.pro_model]);
+
+  const [notices, setNotices] = useState<Record<RouteTier, RouteNotice>>({ flash: null, pro: null });
+  const [modelLists, setModelLists] = useState<Partial<Record<RouteTier, { provider: string; state: ModelListState }>>>({});
+  const fetchTokens = useRef<Record<RouteTier, number>>({ flash: 0, pro: 0 });
+  const savingRef = useRef<RouteTier | null>(null);
+  const [saving, setSaving] = useState<RouteTier | null>(null);
+  const defaultingRef = useRef(false);
+  const [readingDefault, setReadingDefault] = useState<RouteTier | null>(null);
+  const [endpointView, setEndpointView] = useState<'unopened' | 'open' | 'closed'>('unopened');
+  const endpointsOpen = endpointView === 'open';
+  const endpointsId = useId();
+  const providerListId = useId();
+
+  const notify = (tier: RouteTier, notice: RouteNotice) => {
+    setNotices((current) => ({ ...current, [tier]: notice }));
+  };
+
+  const editRow = (tier: RouteTier, patch: Partial<RouteDraft>) => {
+    setRows((current) => ({ ...current, [tier]: { ...current[tier], draft: { ...current[tier].draft, ...patch } } }));
+    setNotices((current) => (current[tier] === null ? current : { ...current, [tier]: null }));
+    if (patch.provider !== undefined) {
+      fetchTokens.current[tier] += 1;
+      setModelLists((current) => {
+        if (current[tier] === undefined) return current;
+        const next = { ...current };
+        delete next[tier];
+        return next;
+      });
     }
   };
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const nextProvider = draft.provider.trim();
-    const nextModel = draft.model.trim();
-    if (!locked && (nextProvider !== provider || nextModel !== model)) save(nextProvider, nextModel);
+
+  const selectedProvider = (tier: RouteTier): string =>
+    rows[tier].draft.provider.trim() || DEFAULT_TIER_BINDING[tier].provider;
+
+  const listFor = (tier: RouteTier): ModelListState => {
+    const entry = modelLists[tier];
+    return entry?.provider === selectedProvider(tier) ? entry.state : { kind: 'idle' };
   };
-  const inputStyle = { ...S.input, ...S.mono, width: '100%', boxSizing: 'border-box' as const };
+
+  const loadModels = (tier: RouteTier) => {
+    const provider = selectedProvider(tier);
+    const token = ++fetchTokens.current[tier];
+    setModelLists((current) => ({ ...current, [tier]: { provider, state: { kind: 'loading' } } }));
+    void get(`/providers?provider=${encodeURIComponent(provider)}`).then((result) => {
+      if (fetchTokens.current[tier] !== token) return;
+      setModelLists((current) => ({ ...current, [tier]: { provider, state: readModelList(result) } }));
+    }).catch(() => {
+      if (fetchTokens.current[tier] !== token) return;
+      setModelLists((current) => ({ ...current, [tier]: { provider, state: { kind: 'failed' } } }));
+    });
+  };
+
+  const save = async (tier: RouteTier) => {
+    if (savingRef.current !== null) return;
+    const row = rows[tier];
+    const provider = row.draft.provider.trim();
+    const model = row.draft.model.trim();
+    if (provider === row.base.provider.trim() && model === row.base.model.trim()) return;
+    savingRef.current = tier;
+    setSaving(tier);
+    notify(tier, null);
+    try {
+      const result = await post('/config', { [`${tier}_provider`]: provider, [`${tier}_model`]: model });
+      if (!result?.ok) throw new Error('save failed');
+      const stored = readRoute(result.config, tier);
+      onConfig(tier, stored);
+      setRows((current) => {
+        const value = current[tier];
+        const keepDraft = value.draft.provider.trim() !== provider || value.draft.model.trim() !== model;
+        return { ...current, [tier]: { draft: keepDraft ? value.draft : stored, base: stored } };
+      });
+      notify(tier, { kind: 'saved', text: copy.saved });
+    } catch {
+      notify(tier, { kind: 'error', text: copy.bindingSaveError });
+    } finally {
+      savingRef.current = null;
+      setSaving(null);
+    }
+  };
+
+  const fillDefault = async (tier: RouteTier) => {
+    if (!readDefaultRoute || defaultingRef.current) return;
+    defaultingRef.current = true;
+    setReadingDefault(tier);
+    notify(tier, null);
+    try {
+      const route = await readDefaultRoute();
+      if (route === null) notify(tier, { kind: 'error', text: copy.bindingDefaultError });
+      else editRow(tier, { provider: route.provider, model: route.model });
+    } catch {
+      notify(tier, { kind: 'error', text: copy.bindingDefaultError });
+    } finally {
+      defaultingRef.current = false;
+      setReadingDefault(null);
+    }
+  };
+
+  const endpointsSaved = () => {
+    fetchTokens.current.flash += 1;
+    fetchTokens.current.pro += 1;
+    setModelLists({});
+    onEndpointsSaved();
+  };
+
+  const inputStyle = { ...S.input, width: '100%', minWidth: 0, boxSizing: 'border-box' as const };
+  const renderRow = (tier: RouteTier) => {
+    const row = rows[tier];
+    const dirty = routeDirty(row);
+    const notice = notices[tier];
+    const busy = saving === tier;
+    const locking = busy || readingDefault === tier;
+    const fallback = DEFAULT_TIER_BINDING[tier];
+    return (
+      <form key={tier} aria-label={tier === 'flash' ? copy.bindingFlash : copy.bindingPro}
+        onSubmit={(event) => { event.preventDefault(); void save(tier); }}
+        className="dsh-crew-route-row">
+        <span className="dsh-crew-route-tier">{tier}</span>
+        <div style={S.field}>
+          <span className="dsh-crew-route-field-label" style={S.fieldLabel}>{copy.bindingProvider}</span>
+          <input name="provider" list={providerListId} value={row.draft.provider}
+            aria-label={`${tier} ${copy.bindingProvider}`} placeholder={fallback.provider} disabled={locking}
+            onChange={(event) => editRow(tier, { provider: event.target.value })}
+            autoComplete="off" spellCheck={false} style={inputStyle} />
+        </div>
+        <div style={S.field}>
+          <span className="dsh-crew-route-field-label" style={S.fieldLabel}>{copy.bindingModel}</span>
+          <ModelField value={row.draft.model} onChange={(value) => editRow(tier, { model: value })}
+            list={listFor(tier)} onFetch={() => loadModels(tier)}
+            placeholder={fallback.model} disabled={locking}
+            ariaLabel={`${tier} ${copy.bindingModel}`}
+            copy={{
+              fetch: copy.fetchModels, fetching: copy.fetchingModels, manual: copy.modelManual, pick: copy.modelPick,
+              blank: copy.modelBlank, empty: copy.modelsEmpty, missing: copy.modelsMissing,
+              failed: copy.modelsFailed, unsupported: copy.modelsUnsupported,
+              unauthorized: copy.modelsUnauthorized,
+            }}
+            styles={S} />
+        </div>
+        <div className="dsh-crew-route-actions">
+          {hasHostDefault && readDefaultRoute && (
+            <button type="button" style={S.btn}
+              title={readingDefault === tier ? copy.bindingLoadingDefault : copy.bindingDshDefault}
+              disabled={saving !== null || readingDefault !== null}
+              onClick={() => void fillDefault(tier)}>
+              {readingDefault === tier ? copy.routeDefaultReading : copy.routeDefault}
+            </button>
+          )}
+          <button type="submit" style={S.btn} disabled={saving !== null || locking || !dirty}>
+            {busy ? copy.bindingSaving : copy.bindingSave}
+          </button>
+        </div>
+        {notice && (
+          <div role={notice.kind === 'saved' ? 'status' : 'alert'}
+            style={{ gridColumn: '1 / -1', fontSize: 11.5, lineHeight: 1.4, color: notice.kind === 'saved' ? 'light-dark(#166e39, #7bd99a)' : 'light-dark(#aa2727, #ff9a9a)' }}>
+            {notice.kind === 'saved' ? `✓ ${notice.text}` : `✗ ${notice.text}`}
+          </div>
+        )}
+      </form>
+    );
+  };
+
   return (
-    <form aria-label={label} onSubmit={submit}
-      style={{ gridColumn: '1 / -1', ...S.blockGrid, alignItems: 'end' }}>
-      <div style={{ gridColumn: '1 / -1', fontSize: 12.5, fontWeight: 600 }}>{label}</div>
-      <label style={S.field}><span style={S.fieldLabel}>{copy.bindingProvider}</span>
-        <input name="provider" list="dsh-crew-worker-providers" value={draft.provider} disabled={locked}
-          onChange={(e) => setDraft({ ...draft, provider: e.target.value })}
-          autoComplete="off" spellCheck={false} style={inputStyle} /></label>
-      <label style={S.field}><span style={S.fieldLabel}>{copy.bindingModel}</span>
-        <input name="model" value={draft.model} disabled={locked} autoComplete="off" spellCheck={false}
-          onChange={(e) => setDraft({ ...draft, model: e.target.value })}
-          style={inputStyle} /></label>
-      <div style={{ gridColumn: '1 / -1', justifySelf: 'end', display: 'flex', gap: 8, alignItems: 'center' }}>
-        {defaultFailed && <span role="status" style={{ fontSize: 11.5 }}>{copy.bindingDefaultError}</span>}
-        {readDefault && <button type="button" style={S.btn} disabled={locked} onClick={() => void fillDefault()}>
-          {readingDefault ? copy.bindingLoadingDefault : copy.bindingDshDefault}
-        </button>}
-        <button type="submit" style={S.btn} disabled={locked}>{copy.bindingSave}</button>
+    <div className="dsh-crew-routing" style={S.block}>
+      <style>{ROUTING_LAYOUT}</style>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <div style={S.settingTitle}>{copy.routingTitle}</div>
+          <div style={S.settingDesc}>{copy.bindingHint}</div>
+        </div>
+        <button type="button" style={S.btn} aria-expanded={endpointsOpen} aria-controls={endpointsId}
+          aria-label={copy.manageEndpoints} onClick={() => setEndpointView(endpointsOpen ? 'closed' : 'open')}>
+          {copy.manageEndpoints} <span aria-hidden="true">{endpointsOpen ? '▴' : '▾'}</span>
+        </button>
       </div>
-    </form>
+      <datalist id={providerListId}>
+        {workerProviders.map(({ id, name }) => <option key={id} value={id} label={name} />)}
+      </datalist>
+      <div className="dsh-crew-route-grid">
+        <div className="dsh-crew-route-head" aria-hidden="true">
+          <span />
+          <span style={S.fieldLabel}>{copy.bindingProvider}</span>
+          <span style={S.fieldLabel}>{copy.bindingModel}</span>
+          <span />
+        </div>
+        {ROUTE_TIERS.map(renderRow)}
+      </div>
+      <div id={endpointsId} hidden={!endpointsOpen}>
+        {endpointView !== 'unopened' && (
+          <WorkerGatewayEditor locale={locale} remote={gatewayRemote} styles={S} onSaved={endpointsSaved}
+            discoverSaved={(provider, revision) => get(`/providers?provider=${encodeURIComponent(provider)}&revision=${revision}`).then(readModelList)} />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -478,7 +724,6 @@ function WorkersPanel({ ctx }: { ctx: any }) {
     });
     return () => { mounted = false; void scope.dispose(); };
   }, [ctx]);
-  const [bindingSaving, setBindingSaving] = useState(false);
   const [dynModels, setDynModels] = useState<Record<string, Array<{ value: string; label?: string }>>>({});
   const [presetRoster, setPresetRoster] = useState<{ defaultId?: string; presets: Array<{ id: string; name?: string; trust?: string }> }>({ presets: [] });
   // Labels are built at render, not at fetch, so they follow a locale switch.
@@ -639,7 +884,12 @@ function WorkersPanel({ ctx }: { ctx: any }) {
 
   const applyPatch = useCallback((patch: Record<string, any>) => {
     void post('/config', patch).then((r) => {
-      if (r.ok) { setConfig(r.config); setNotice(copy.saved); setTimeout(() => setNotice(''), 1500); }
+      if (r.ok) {
+        const savedFields = Object.fromEntries(Object.keys(patch).map(key => [key, r.config[key]]));
+        setConfig((current: any) => ({ ...current, ...savedFields }));
+        setNotice(copy.saved);
+        setTimeout(() => setNotice(''), 1500);
+      }
     }).catch(() => {});
   }, [post, copy]);
   /** Selects & checkboxes: apply immediately. */
@@ -649,21 +899,6 @@ function WorkersPanel({ ctx }: { ctx: any }) {
   };
   /** Text/number inputs: track locally, apply on blur. */
   const fieldLocal = (key: string, value: any) => setConfig((c: any) => ({ ...c, [key]: value }));
-
-  const saveTierBinding = async (tier: 'flash' | 'pro', provider: string, model: string) => {
-    setBindingSaving(true);
-    try {
-      const result = await post('/config', { [`${tier}_provider`]: provider, [`${tier}_model`]: model });
-      if (!result.ok) throw new Error(result.error);
-      setConfig(result.config);
-      setNotice(copy.saved);
-      setTimeout(() => setNotice(''), 1500);
-    } catch {
-      setNotice(copy.bindingSaveError);
-    } finally {
-      setBindingSaving(false);
-    }
-  };
 
   // --- custom providers & user-added models -------------------------------
   const customProviders: any[] = config?.custom_providers ?? [];
@@ -922,22 +1157,14 @@ function WorkersPanel({ ctx }: { ctx: any }) {
             <CustomSelect value={config.preset_flash ?? 'default'} onChange={(v) => field('preset_flash', v)} options={presetOptions} /></label>
           <label style={S.field}><span style={S.fieldLabel}>{copy.presetPro}</span>
             <CustomSelect value={config.preset_pro ?? 'default'} onChange={(v) => field('preset_pro', v)} options={presetOptions} /></label>
-          <div style={{ gridColumn: '1 / -1', fontSize: 11.5, opacity: 0.65 }}>{copy.bindingHint}</div>
-          <WorkerGatewayEditor locale={locale} remote={gatewayRemote} styles={S} onSaved={refreshWorkerProviders} />
-          <datalist id="dsh-crew-worker-providers">
-            {workerProviders.map(({ id, name }) => <option key={id} value={id} label={name} />)}
-          </datalist>
-          {(['flash', 'pro'] as const).map((tier) => {
-            const provider = config[`${tier}_provider`] ?? '';
-            const model = config[`${tier}_model`] ?? '';
-            return <TierBindingEditor key={JSON.stringify([tier, provider, model])}
-              label={tier === 'flash' ? copy.bindingFlash : copy.bindingPro} copy={copy}
-              provider={provider} model={model} saving={bindingSaving}
-              readDefault={hasHostDefault ? readDefaultRoute : undefined}
-              save={(nextProvider, nextModel) => void saveTierBinding(tier, nextProvider, nextModel)} />;
-          })}
         </>))}
 
+        <ModelRouting config={config} copy={copy} locale={locale} get={get} post={post}
+          readDefaultRoute={readDefaultRoute} hasHostDefault={hasHostDefault}
+          workerProviders={workerProviders} gatewayRemote={gatewayRemote}
+          onConfig={(tier, route) => setConfig((current: any) => ({
+            ...current, [`${tier}_provider`]: route.provider, [`${tier}_model`]: route.model,
+          }))} onEndpointsSaved={refreshWorkerProviders} />
 
         <div style={S.group}>{copy.groupRuntime}</div>
         {block(copy.cardRuntime, (<>

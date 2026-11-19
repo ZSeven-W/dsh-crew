@@ -2,7 +2,7 @@ const NAMESPACE = 'llm-pi-ai';
 const PROTOCOL = 'openai-completions';
 const PROVIDER_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
-type Reply<T> = { ok: true; value: T } | { ok: false; error: { code: string } };
+type Reply<T> = { ok: true; value: T } | { ok: false; error: { code: string; message?: string } };
 type ModelProfile = { id: string; [key: string]: unknown };
 type ProviderProfile = {
   api?: string;
@@ -26,6 +26,7 @@ export type GatewayRemote = {
   llm: {
     listProviders(): Promise<Reply<{ id: string }[]>>;
     listConfigurableProviders(): Promise<Reply<{ provider: string }[]>>;
+    discoverModels?(settingsNs: string, request: Omit<DiscoveryRequest, 'provider'>, signal?: AbortSignal): Promise<Reply<DiscoveredModel[]>>;
   };
   credentials: {
     set(ref: string, key: string): Promise<Reply<unknown>>;
@@ -53,6 +54,22 @@ export type GatewayDraft = {
   apiKey: string;
   editing: boolean;
 };
+
+export type DiscoveredModel = { id: string; name?: string };
+
+export type DiscoveryRequest = {
+  baseURL: string;
+  api: string;
+  provider?: string;
+  apiKey?: string;
+};
+
+export type DiscoveryOutcome =
+  | { kind: 'ready'; models: DiscoveredModel[] }
+  | { kind: 'empty' }
+  | { kind: 'unsupported' }
+  | { kind: 'unauthorized' }
+  | { kind: 'failed' };
 
 export type GatewaySaveResult =
   | { kind: 'saved' }
@@ -83,7 +100,7 @@ export async function loadWorkerGateways(remote: GatewayRemote): Promise<Gateway
   };
 }
 
-function endpoint(value: string): string | null {
+export function canonicalEndpoint(value: string): string | null {
   try {
     const url = new URL(value.trim());
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) return null;
@@ -108,7 +125,7 @@ export async function saveWorkerGateway(
 ): Promise<GatewaySaveResult> {
   const id = draft.id.trim();
   if (!PROVIDER_ID.test(id)) return { kind: 'invalid-id' };
-  const baseURL = endpoint(draft.baseURL);
+  const baseURL = canonicalEndpoint(draft.baseURL);
   if (!baseURL) return { kind: 'invalid-url' };
 
   const existing = catalog.providers.find(provider => provider.id === id);
@@ -117,7 +134,7 @@ export async function saveWorkerGateway(
   const model = draft.modelId.trim();
   if (!existing && !model) return { kind: 'invalid-model' };
   const apiKey = draft.apiKey.trim();
-  const endpointChanged = existing !== undefined && baseURL !== endpoint(existing.baseURL);
+  const endpointChanged = existing !== undefined && baseURL !== canonicalEndpoint(existing.baseURL);
   if (endpointChanged && existing.apiKeyEnv && !apiKey) return { kind: 'key-required' };
   const stem = `DSH_CREW_${id.toUpperCase().replaceAll('-', '_')}`;
   const currentRef = existing?.apiKeyEnv;
@@ -146,4 +163,63 @@ export async function saveWorkerGateway(
   if (written.ok === false) return { kind: written.error.code === 'settings/conflict' ? 'conflict' : 'failed' };
   if (ref && !await retryWorkerGatewayCredential(remote, ref, apiKey)) return { kind: 'credential-pending', ref };
   return { kind: 'saved' };
+}
+
+export function gatewayDiscoveryRequest(
+  draft: GatewayDraft, catalog: GatewayCatalog | null,
+): DiscoveryRequest | null {
+  const baseURL = canonicalEndpoint(draft.baseURL);
+  if (baseURL === null) return null;
+  const apiKey = draft.apiKey.trim();
+  if (apiKey !== '') return { baseURL, api: PROTOCOL, apiKey };
+  const saved = draft.editing && catalog !== null
+    ? catalog.providers.find(provider => provider.id === draft.id.trim() && canonicalEndpoint(provider.baseURL) === baseURL)
+    : undefined;
+  return saved === undefined
+    ? { baseURL, api: PROTOCOL }
+    : { baseURL, api: PROTOCOL, provider: saved.id };
+}
+
+function normalizeDiscovered(value: unknown): DiscoveredModel[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const models: DiscoveredModel[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const id = (entry as { id?: unknown }).id;
+    if (typeof id !== 'string') continue;
+    const trimmed = id.trim();
+    if (trimmed === '' || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    const name = (entry as { name?: unknown }).name;
+    models.push(typeof name === 'string' && name.trim() !== '' ? { id: trimmed, name: name.trim() } : { id: trimmed });
+  }
+  return models;
+}
+
+function discoveryUnsupported(reply: { error?: { code?: string; message?: string } }): boolean {
+  const code = reply.error?.code ?? '';
+  const message = reply.error?.message ?? '';
+  return code === 'NO_DISCOVERY'
+    || /no model discovery is registered|has no model listing|DISCOVERY_UNSUPPORTED/u.test(message);
+}
+
+export async function discoverGatewayModels(
+  remote: GatewayRemote, request: DiscoveryRequest,
+): Promise<DiscoveryOutcome> {
+  if (typeof remote?.llm?.discoverModels !== 'function') return { kind: 'unsupported' };
+  let reply: Reply<DiscoveredModel[]>;
+  try {
+    const { baseURL, api, apiKey } = request;
+    reply = await remote.llm.discoverModels(NAMESPACE, { baseURL, api, ...(apiKey ? { apiKey } : {}) }, AbortSignal.timeout(15000));
+  } catch {
+    return { kind: 'failed' };
+  }
+  if (!reply) return { kind: 'failed' };
+  if (reply.ok === false) {
+    if (/\banswered (401|403)\b/.test(reply.error.message ?? '')) return { kind: 'unauthorized' };
+    return discoveryUnsupported(reply) ? { kind: 'unsupported' } : { kind: 'failed' };
+  }
+  const models = normalizeDiscovered(reply.value);
+  return models.length === 0 ? { kind: 'empty' } : { kind: 'ready', models };
 }
