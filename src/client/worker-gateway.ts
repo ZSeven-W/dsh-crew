@@ -137,10 +137,8 @@ export async function saveWorkerGateway(
   const endpointChanged = existing !== undefined && baseURL !== canonicalEndpoint(existing.baseURL);
   if (endpointChanged && existing.apiKeyEnv && !apiKey) return { kind: 'key-required' };
   const stem = `DSH_CREW_${id.toUpperCase().replaceAll('-', '_')}`;
-  const currentRef = existing?.apiKeyEnv;
-  const owned = currentRef?.startsWith(stem + '_') && /^[A-F0-9]{32}_API_KEY$/.test(currentRef.slice(stem.length + 1));
   const ref = apiKey
-    ? (!endpointChanged && owned ? currentRef : `${stem}_${crypto.randomUUID().replaceAll('-', '').toUpperCase()}_API_KEY`)
+    ? `${stem}_${crypto.randomUUID().replaceAll('-', '').toUpperCase()}_API_KEY`
     : undefined;
   const path = ['providers', id];
   const ops: SettingOp[] = [];

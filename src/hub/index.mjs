@@ -146,7 +146,7 @@ export class WorkerRegistry {
       tokens: { input: 0, output: 0, reasoning: 0 },
       startedAt: new Date().toISOString(), endedAt: null,
       result: null, error: null, stopReason: null, handle: null, waiters: [],
-      texts: [],
+      texts: [], controller: new AbortController(),
     };
     this.jobs.set(id, job);
 
@@ -186,10 +186,13 @@ export class WorkerRegistry {
     };
 
     const run = async () => {
+      if (job.status !== 'running') return;
       const llm = this.ctx.llm;
+      const { signal } = job.controller;
       const modelInfo = typeof llm?.resolveModelInfo === 'function'
-        ? await llm.resolveModelInfo(resolvedProvider, resolvedModel)
+        ? await llm.resolveModelInfo(resolvedProvider, resolvedModel, signal)
         : undefined;
+      if (job.status !== 'running') return;
       const acceptsEffort = modelInfo === undefined || modelInfo.reasoning?.efforts.some(level => level.id === effort);
       const selection = {
         provider: resolvedProvider, model: resolvedModel,
@@ -197,6 +200,7 @@ export class WorkerRegistry {
       };
       const handle = await this.ctx.agents.create({
         sessionId,
+        signal,
         meta: { cwd: cwdPath, ...(presetId === undefined ? {} : { agentPreset: presetId }) },
         agentOptions: {
           provider: selection.provider,
@@ -212,28 +216,32 @@ export class WorkerRegistry {
           agentCtx.on('session/event', onEvent);
           agentCtx.on('agent/error', (payload) => {
             const err = payload?.error;
-            if (job.status !== 'needs_input') job.error = err?.message ?? String(err);
+            if (job.status === 'running') job.error = err?.message ?? String(err);
           });
         },
       });
+      if (job.status !== 'running') { await handle.dispose(); return; }
       job.handle = handle;
-      if (job.status === 'needs_input') { await handle.dispose(); return; }
       try {
         // Group the worker session under the workspace of its cwd; create the
         // workspace when none exists yet (resolveByPath is exact-match, so a
         // job cwd never inherits a parent directory's workspace).
         const registry = this.ctx.get('workspaceRegistry');
         if (registry !== undefined) {
-          const ws = (await registry.resolveByPath(cwdPath)) ?? (await registry.create(cwdPath));
+          const existing = await registry.resolveByPath(cwdPath);
+          if (job.status !== 'running') return;
+          const ws = existing ?? await registry.create(cwdPath);
+          if (job.status !== 'running') return;
           await ws.attachSession(sessionId);
         }
       } catch (err) {
         this.ctx.logger?.warn?.(`dsh-crew: workspace attach failed for ${cwdPath}: ${err?.message ?? err}`);
       }
       await handle.agent.whenIdle();
+      if (job.status !== 'running') return;
       handle.agent.followup(userMessage(task));
       await handle.agent.whenIdle();
-      if (job.status !== 'needs_input') {
+      if (job.status === 'running') {
         job.result = job.texts.at(-1) ?? '';
         job.status = job.stopReason === 'completed' ? 'done' : 'failed';
       }
@@ -243,6 +251,7 @@ export class WorkerRegistry {
 
     job.promise = run()
       .catch((err) => {
+        if (job.status === 'cancelled') return;
         if (job.status === 'running') job.status = 'failed';
         job.error = job.error ?? (err?.message ?? String(err));
       })
@@ -274,6 +283,7 @@ export class WorkerRegistry {
     if (job.status === 'running') {
       job.status = 'cancelled';
       job.error = 'cancelled by request';
+      job.controller.abort();
       try { await job.handle?.dispose(); } catch {}
       this.publish();
     }
