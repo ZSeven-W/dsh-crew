@@ -168,7 +168,8 @@ const COPY = {
     lockBadgeTip: (h: any) => `「${h?.cwd ?? '此工作区'}」正被运行中任务持锁（job ${h?.jobId} · backend ${h?.backend} · 开始于 ${h?.startedAt}）：对该 cwd 的再次派发会被拒绝，除非传 allow_concurrent_cwd: true。`,
     shardStale: (min: number) => `状态源已 ${min} 分钟没有写入（任务可能已无输出地卡住，或所属进程已死但状态源尚未清理）`,
     stalledTip: (last: string) => last ? `超过 120 秒无输出（上次输出 ${last} 前），进程仍存活；长时间工具调用可能误报` : '超过 120 秒无输出，进程仍存活；长时间工具调用可能误报',
-    col: { id: '任务', source: '来源', tier: '档位', status: '状态', progress: '进度', tokens: 'tokens ⇅', task: '内容' },
+    col: { id: '任务', source: '来源', model: '模型 / 提供方', status: '状态', progress: '进度', tokens: 'tokens ⇅', task: '内容' },
+    modelCliDefault: 'CLI 默认', routeUnrecorded: '未记录',
     working: '处理中…',
     tips: {
       claude: {
@@ -273,7 +274,8 @@ const COPY = {
     lockBadgeTip: (h: any) => `"${h?.cwd ?? 'this workspace'}" is held by a running job (job ${h?.jobId} · backend ${h?.backend} · started ${h?.startedAt}): a second dispatch to this cwd is refused unless allow_concurrent_cwd: true is passed.`,
     shardStale: (min: number) => `status feed has not been written for ${min} min (job may be stuck with no output, or its process died but the feed was not cleaned up yet)`,
     stalledTip: (last: string) => last ? `No output for 120s (last output ${last} ago); the process is still alive — long tool runs can false-positive` : 'No output for 120s; the process is still alive — long tool runs can false-positive',
-    col: { id: 'job', source: 'source', tier: 'tier', status: 'status', progress: 'progress', tokens: 'tokens ⇅', task: 'task' },
+    col: { id: 'job', source: 'source', model: 'Model / provider', status: 'status', progress: 'progress', tokens: 'tokens ⇅', task: 'task' },
+    modelCliDefault: 'CLI default', routeUnrecorded: 'Unrecorded',
     working: 'Working…',
     tips: {
       claude: {
@@ -1055,17 +1057,28 @@ function WorkersPanel({ ctx }: { ctx: any }) {
   const rows = jobsLoaded ? displayJobs(jobs, ghosts) : [];
   const groups = groupJobs(rows);
   const locks = workspaceLocks(rows);
-  /** One job row: status (with orphan/stall labeling), progress, tokens and a
-   * single-line task cell (WPC13). */
   const renderJobRow = (job: any) => {
     const ghostRow = !!ghosts[job.id] && !jobs.some((l) => l?.id === job.id);
     const info = statusInfoOf(job, copy);
     const pb = procBadgeOf(job, procProbe[job.id]);
+    const model = typeof job.model === 'string' ? job.model.trim() : '';
+    const modelLabel = model === '(cli default)' ? copy.modelCliDefault : model || copy.routeUnrecorded;
+    const provider = typeof job.provider === 'string' ? job.provider.trim() : '';
+    const providerLabel = provider || copy.routeUnrecorded;
     return (
       <tr key={job.id} style={job.status === 'orphaned' ? { background: 'rgba(240,136,62,0.05)' } : undefined}>
         <td style={{ ...S.tight, ...S.mono }} title={job.origin ? `${job.id} · ${job.origin}` : job.id}>{String(job.id).replace(/-[a-z0-9]+$/, '')}</td>
         <td style={S.tight}><span style={S.chip(job.source === 'claude-code' || job.source === 'codex')}>{sourceLabel(job.source)}</span></td>
-        <td style={S.tight} title={job.profile ? `profile: ${job.profile} · backend: ${job.backend}` : undefined}>{job.tier}/{job.effort}</td>
+        <td style={S.tight}>
+          <div style={{ ...S.mono, overflow: 'hidden', textOverflow: 'ellipsis' }}
+            title={modelLabel}>{modelLabel}</div>
+          <div style={{ display: 'flex', gap: 5, fontSize: 11, lineHeight: 1.45 }}>
+            <span title={providerLabel}
+              style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{providerLabel}</span>
+            <span style={{ opacity: 0.55, flexShrink: 0 }}
+              title={job.profile ? `profile: ${job.profile} · backend: ${job.backend}` : undefined}>{job.tier}/{job.effort}</span>
+          </div>
+        </td>
         <td style={{ ...S.tight, minWidth: 82 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}
             title={job.currentTool ? `${info.title} · ${job.currentTool}` : info.title}>
@@ -1347,12 +1360,12 @@ function WorkersPanel({ ctx }: { ctx: any }) {
         <div style={{ overflowX: 'auto' }}>
           <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed', minWidth: 800 }}>
             <colgroup>
-              <col style={{ width: 64 }} /><col style={{ width: 58 }} /><col style={{ width: 72 }} />
+              <col style={{ width: 64 }} /><col style={{ width: 58 }} /><col style={{ width: 160 }} />
               <col style={{ width: 84 }} /><col style={{ width: 100 }} /><col style={{ width: 84 }} />
-              <col style={{ width: 338 }} />
+              <col style={{ width: 250 }} />
             </colgroup>
             <thead><tr>
-              {[copy.col.id, copy.col.source, copy.col.tier, copy.col.status, copy.col.progress, copy.col.tokens, copy.col.task].map((h) => (
+              {[copy.col.id, copy.col.source, copy.col.model, copy.col.status, copy.col.progress, copy.col.tokens, copy.col.task].map((h) => (
                 <th key={h} style={{ ...S.tight, fontSize: 11, opacity: 0.55, fontWeight: 500 }}>{h}</th>
               ))}
             </tr></thead>
