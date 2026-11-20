@@ -137,6 +137,32 @@ test('a partial save can retry the credential without touching settings', async 
   assert.deepEqual(calls.map(([operation]) => operation), ['settings', 'credential', 'credential-retry']);
 });
 
+test('retrying an earlier key rotation preserves the newer key for the same URL', async () => {
+  const profile = {
+    api: 'openai-completions', baseURL: 'http://127.0.0.1:9000/v1', models: [{ id: 'team-model' }],
+    apiKeyEnv: 'DSH_CREW_LOCAL_GATEWAY_0123456789ABCDEF0123456789ABCDEF_API_KEY',
+  };
+  const { remote } = host({ providers: { 'local-gateway': profile } });
+  const credentials = new Map();
+  remote.settings.mutate = async (_ns, ops) => {
+    profile.apiKeyEnv = ops[0].value;
+    return { ok: true };
+  };
+  remote.credentials.set = async () => ({ ok: false });
+  const rotation = { ...draft, editing: true, modelId: '' };
+  const pending = await saveWorkerGateway(remote, await loadWorkerGateways(remote), rotation);
+  assert.equal(pending.kind, 'credential-pending');
+
+  remote.credentials.set = async (ref, key) => {
+    credentials.set(ref, key);
+    return { ok: true };
+  };
+  const latest = await saveWorkerGateway(remote, await loadWorkerGateways(remote), { ...rotation, apiKey: 'latest-fixture-key' });
+  assert.equal(latest.kind, 'saved');
+  assert.equal(await retryWorkerGatewayCredential(remote, pending.ref, rotation.apiKey), true);
+  assert.equal(credentials.get(profile.apiKeyEnv), 'latest-fixture-key');
+});
+
 test('hosts without writable provider settings leave the editor unavailable', async () => {
   const { remote, calls } = host({ writable: false });
   assert.equal(await loadWorkerGateways(remote), null);
